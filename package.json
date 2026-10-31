@@ -1,0 +1,34 @@
+{
+  "name": "lan-tower-defense",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Kooperatives 3D LAN Tower Defense für bis zu 16 Spieler (WC3-TD-inspiriert)",
+  "scripts": {
+    "build": "vite build",
+    "start": "vite build && tsx server/index.ts",
+    "server": "tsx server/index.ts",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:client": "vite",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "bots": "tsx tools/bots.ts",
+    "balance": "tsx tools/balance.ts"
+  },
+  "dependencies": {
+    "three": "^0.187.0",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
+}
