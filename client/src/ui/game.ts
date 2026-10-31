@@ -83,7 +83,7 @@ export class GameView {
       <div class="build-panel panel">
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
-        <div class="build-hint muted" style="margin-top:6px;font-size:12px"><kbd>X</kbd> Cursor <kbd>Q</kbd> / <kbd>E</kbd> Turm wählen</div>
+        <div class="build-hint muted"><div class="hint-row"><span>Auswahl-Cursor</span><span class="hint-keys"><kbd>X</kbd></span></div><div class="hint-row"><span>Vorheriger / nächster Turm</span><span class="hint-keys"><kbd>Q</kbd> / <kbd>E</kbd></span></div></div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung <kbd>F</kbd></button>
         <div class="h-spectator hidden" style="margin-top:6px">
@@ -388,11 +388,12 @@ export class GameView {
   private updateBuildButtons() {
     // While a tower is being placed the arrow keys move the build cursor instead of the camera.
     this.world.arrowKeysMoveCamera = !this.buildDef && !this.cursorMode;
-    this.q('.build-hint').innerHTML = this.buildDef
-      ? '<kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> bauen <kbd>Esc</kbd> Ende'
+    const rows: [string, string][] = this.buildDef
+      ? [['←↑↓→', 'Cursor bewegen'], ['⇧ + ←↑↓→', '5 Felder weit'], ['Enter / Leertaste', 'Turm bauen'], ['Esc', 'Beenden']]
       : this.cursorMode
-        ? '<kbd>←↑↓→</kbd> Cursor (Turm wird direkt geöffnet) <kbd>⇧</kbd> schneller<br><kbd>U</kbd> aufwerten <kbd>V</kbd> verkaufen <kbd>C</kbd> Zielmodus <kbd>Esc</kbd> Ende'
-        : '<kbd>X</kbd> Cursor <kbd>Q</kbd> / <kbd>E</kbd> Turm wählen';
+        ? [['←↑↓→', 'Turm unter dem Cursor öffnen'], ['⇧ + ←↑↓→', '5 Felder weit'], ['U', 'Aufwerten'], ['V', 'Verkaufen'], ['C', 'Zielmodus wechseln'], ['Esc', 'Beenden']]
+        : [['X', 'Auswahl-Cursor'], ['Q / E', 'Vorheriger / nächster Turm']];
+    this.q('.build-hint').innerHTML = rows.map(([k, t]) => `<div class="hint-row"><span>${t}</span><span class="hint-keys">${k.split(' ').map((p) => (p === '+' || p === '/') ? p : `<kbd>${p}</kbd>`).join(' ')}</span></div>`).join('');
     const me = this.me;
     if (!me) return;
     this.el.querySelectorAll<HTMLButtonElement>('.build-btn').forEach((b) => {

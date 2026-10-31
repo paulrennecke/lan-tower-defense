@@ -103,6 +103,10 @@ table.dmg th { color: var(--gold); background: #1f1a12; }
 .build-btn .cost { font-size: 12px; color: var(--gold); }
 .build-btn .hk { position: absolute; top: 4px; right: 4px; margin: 0; }
 .build-btn.locked { filter: grayscale(0.9); }
+.build-hint { margin-top: 8px; padding-top: 6px; border-top: 1px solid #3a2f1c; font-size: 12px; }
+.hint-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; }
+.hint-keys { display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+.hint-keys kbd { margin-left: 0; }
 .tooltip {
   position: fixed; z-index: 40; width: 300px; pointer-events: none; font-size: 13px; line-height: 1.4;
 }
