@@ -378,7 +378,7 @@ export class GameView {
     this.q('.h-class').innerHTML = `${CLASS_ICONS[cls.id]} ${esc(cls.name)}`;
     grid.innerHTML = cls.towers.map((t, i) => `
       <button class="build-btn" data-def="${t.id}">
-        <span class="hk">${i + 1}</span>
+        <kbd class="hk">${i + 1}</kbd>
         <span class="ico">${TOWER_ICONS[t.shape]}</span>
         <span class="nm">${esc(t.name)}</span>
         <span class="cost">${t.cost}${t.lumber ? ` +${t.lumber}🌲` : ''}</span>
