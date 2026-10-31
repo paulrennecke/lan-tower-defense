@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { TOWER_BY_ID } from '../../../shared/data/classes';
 import { ENEMIES, type EnemyDef } from '../../../shared/data/enemies';
-import { PATH } from '../../../shared/map';
 import { EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN, type Snapshot, type TowerInfo } from '../../../shared/protocol';
 import { FxManager, projColor } from './fx';
 import { createEnemyModel, createMine, createTowerModel, type EnemyModel, type TowerModel } from './models';
@@ -12,9 +11,15 @@ export interface ClientTower { info: TowerInfo; group: TowerModel }
 export interface ClientEnemy {
   id: number;
   def: EnemyDef;
-  fromD: number;
-  toD: number;
-  renderD: number;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  /** Interpolated logic position. */
+  rx: number;
+  ry: number;
+  /** Small per-creep offset so creeps on the same route do not overlap exactly. */
+  ox: number;
+  oy: number;
+  dir: number;
   hp: number;
   maxHp: number;
   flags: number;
@@ -105,7 +110,7 @@ export class Entities {
 
   // ------------------------------------------------------------------ enemies
 
-  private createEnemy(id: number, typeIdx: number, d: number, hp: number, maxHp: number, flags: number): ClientEnemy {
+  private createEnemy(id: number, typeIdx: number, x: number, y: number, hp: number, maxHp: number, flags: number): ClientEnemy {
     const def = ENEMIES[typeIdx];
     const root = new THREE.Group();
     const model = createEnemyModel(def);
@@ -135,15 +140,16 @@ export class Entities {
     root.add(status);
     root.userData.pickId = 'e' + id;
     this.world.scene.add(root);
-    const e: ClientEnemy = { id, def, fromD: d, toD: d, renderD: d, hp, maxHp, flags, root, model, ghost, barFg: fg, bar, status, pos: new THREE.Vector3() };
+    const h = Math.sin(id * 12.9898) * 43758.5453;
+    const ox = def.boss ? 0 : ((h - Math.floor(h)) - 0.5) * 0.5, oy = def.boss ? 0 : ((h * 7 - Math.floor(h * 7)) - 0.5) * 0.5;
+    const e: ClientEnemy = { id, def, from: { x, y }, to: { x, y }, rx: x, ry: y, ox, oy, dir: Math.PI / 2, hp, maxHp, flags, root, model, ghost, barFg: fg, bar, status, pos: new THREE.Vector3() };
     this.placeEnemy(e);
     return e;
   }
 
   private placeEnemy(e: ClientEnemy) {
-    const p = PATH.posAt(e.renderD);
-    toWorld(p.x, p.y, 0, e.root.position);
-    e.root.rotation.y = Math.atan2(Math.cos(p.dir), Math.sin(p.dir));
+    toWorld(e.rx + e.ox, e.ry + e.oy, 0, e.root.position);
+    e.root.rotation.y = Math.atan2(Math.cos(e.dir), Math.sin(e.dir));
     e.pos.copy(e.root.position);
     e.pos.y += e.model.userData.height * 0.6;
   }
@@ -162,15 +168,16 @@ export class Entities {
     for (const f of snap.fx) if (f[0] === 'l') leaked.add(f[1]);
 
     const seen = new Set<number>();
-    for (const [id, typeIdx, d, hp, maxHp, flags] of snap.enemies) {
+    for (const [id, typeIdx, x, y, hp, maxHp, flags] of snap.enemies) {
       seen.add(id);
       let e = this.enemies.get(id);
       if (!e) {
-        e = this.createEnemy(id, typeIdx, d, hp, maxHp, flags);
+        e = this.createEnemy(id, typeIdx, x, y, hp, maxHp, flags);
         this.enemies.set(id, e);
       }
-      e.fromD = e.renderD;
-      e.toD = d;
+      e.from = { x: e.rx, y: e.ry };
+      e.to = { x, y };
+      if (Math.hypot(x - e.rx, y - e.ry) > 0.01) e.dir = Math.atan2(y - e.ry, x - e.rx);
       e.hp = hp;
       e.maxHp = maxHp;
       e.flags = flags;
@@ -257,7 +264,8 @@ export class Entities {
     const k = Math.min(1.3, (performance.now() - this.lastSnapAt) / this.snapInterval);
     const camQ = this.world.camera.quaternion;
     for (const e of this.enemies.values()) {
-      e.renderD = e.fromD + (e.toD - e.fromD) * k;
+      e.rx = e.from.x + (e.to.x - e.from.x) * k;
+      e.ry = e.from.y + (e.to.y - e.from.y) * k;
       this.placeEnemy(e);
       if (!(e.flags & EF_STUN) && !this.paused) e.model.userData.anim(t);
       const r = Math.max(0, e.hp / e.maxHp);

@@ -46,8 +46,8 @@ export interface PlayerStats {
   research: Record<string, number>;
 }
 
-/** [id, enemyTypeIndex, pathDistance, hp, maxHp, flags] */
-export type EnemySnap = [number, number, number, number, number, number];
+/** [id, enemyTypeIndex, x, y, hp, maxHp, flags] */
+export type EnemySnap = [number, number, number, number, number, number, number];
 export const EF_SLOW = 1, EF_STUN = 2, EF_POISON = 4, EF_INVIS = 8, EF_REVEALED = 16, EF_ARMORRED = 32;
 
 export type Fx =

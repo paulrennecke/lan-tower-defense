@@ -2,7 +2,7 @@
 // Usage: npx tsx tools/bots.ts [count=15] [url=ws://localhost:3000/ws] [--start]
 import WebSocket from 'ws';
 import { CLASSES, CLASS_BY_ID, TOWER_BY_ID } from '../shared/data/classes';
-import { MAP_H, MAP_W, PATH, SECTION_OF, cellIndex } from '../shared/map';
+import { MAP_H, MAP_W, SECTION_OF, cellIndex } from '../shared/map';
 import type { ClientMsg, ServerMsg, TowerInfo } from '../shared/protocol';
 
 const count = Number(process.argv[2] ?? 15);
@@ -44,7 +44,8 @@ function bot(i: number) {
           const s = SECTION_OF[cellIndex(cx, cy)];
           if (s >= 0 && owners[s] === you) free.push({ cx, cy });
         }
-        free.sort((a, b) => PATH.project(a.cx + 0.5, a.cy + 0.5).dist - PATH.project(b.cx + 0.5, b.cy + 0.5).dist);
+        // Wall rows of a simple maze first (every third row), so bots do not block each other's routes.
+        free = free.filter((c) => c.cy % 3 === 1 && c.cx % 13 !== 1);
         break;
       case 'snap': {
         if (i === 0) {

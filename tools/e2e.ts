@@ -2,7 +2,7 @@
 // Usage: npx tsx tools/e2e.ts <path-to-playwright-core> [url]
 import { createRequire } from 'node:module';
 import { mkdirSync } from 'node:fs';
-import { MAP_W, MAP_H, SECTION_OF, cellIndex, PATH } from '../shared/map';
+import { MAP_W, MAP_H, SECTION_OF, cellIndex } from '../shared/map';
 
 const require = createRequire(import.meta.url);
 const pw = require(process.argv[2]);
@@ -48,8 +48,7 @@ async function main() {
   for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
     const s = SECTION_OF[cellIndex(cx, cy)];
     if (s < 0 || state.owners[s] !== state.you) continue;
-    const { dist } = PATH.project(cx + 0.5, cy + 0.5);
-    cells.push({ cx, cy, score: dist });
+    cells.push({ cx, cy, score: cy * 100 + cx });
   }
   cells.sort((x, y) => x.score - y.score);
   const target = cells[0];
@@ -78,7 +77,7 @@ async function main() {
     const own = [] as { cx: number; cy: number; d: number }[];
     for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
       const s = SECTION_OF[cellIndex(cx, cy)];
-      if (s >= 0 && st.owners[s] === st.you) own.push({ cx, cy, d: PATH.project(cx + 0.5, cy + 0.5).dist });
+      if (s >= 0 && st.owners[s] === st.you) own.push({ cx, cy, d: cy * 100 + cx });
     }
     own.sort((x, y) => x.d - y.d);
     for (const c of own.slice(1, 4)) await page.evaluate(({ c, cls }: any) => (window as any).__td.net.send({ t: 'build', def: cls, cx: c.cx, cy: c.cy }), { c, cls });

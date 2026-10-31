@@ -2,15 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { Game, SELL_REFUND } from '../server/game';
 import { TOWER_BY_ID } from '../shared/data/classes';
 import { FIRST_COUNTDOWN, START_GOLD, START_LIVES, VICTORY_WAVE } from '../shared/data/waves';
-import { MAP_H, MAP_W, PATH, SECTION_OF, cellIndex } from '../shared/map';
+import { MAP_H, MAP_W, SECTION_OF, SPAWNS, cellIndex, traceRoute } from '../shared/map';
 import { simulate } from '../tools/balance';
 
 const mkGame = (classes: string[], hooks = {}) =>
   new Game(classes.map((c, i) => ({ id: 'p' + i, name: 'P' + i, color: 0, classId: c })), hooks);
 
-/** Own buildable cell closest to the given path distance. */
+/** Point at roughly distance d along the creep route of the player's lane. */
+function routePoint(g: Game, pid: string, d: number) {
+  const lane = g.sectionOwners.findIndex((o) => o === pid) % 4;
+  const route = traceRoute(g.flow, g.blocked, SPAWNS[lane].x, SPAWNS[lane].y);
+  return route[Math.min(route.length - 1, Math.round(d))];
+}
+
+const laneOf = (g: Game, pid: string) => g.sectionOwners.findIndex((o) => o === pid) % 4;
+
+/** Own buildable cell closest to the given route distance. */
 function cellNear(g: Game, pid: string, d: number) {
-  const target = PATH.posAt(d);
+  const target = routePoint(g, pid, d);
   let best: { cx: number; cy: number } | null = null, bestD = Infinity;
   for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
     const s = SECTION_OF[cellIndex(cx, cy)];
@@ -84,16 +93,51 @@ describe('Game commands', () => {
 });
 
 describe('Game simulation', () => {
-  it('kill gold is shared by all players and leaks cost lives', () => {
+  it('mazing: blocking builds are rejected and creeps walk through the gap', () => {
+    const g = mkGame(['human']);
+    expect(g.lanes).toEqual([1]);
+    g.players.get('p0')!.gold = 10000;
+    for (let x = 17; x < 29; x++) expect(g.build('p0', 'h_block', x, 10)).toBeNull();
+    expect(g.build('p0', 'h_block', 29, 10)).toMatch(/blockieren/);
+    expect(g.upgrade('p0', [...g.towers.keys()][0])).toMatch(/Maximale/);
+    const e = g.spawnEnemy('ghoul', 1, 1, 1);
+    const crossings = new Set<number>();
+    for (let i = 0; i < 400 && !e.dead; i++) {
+      g.tick(0.05);
+      expect(g.blocked[cellIndex(Math.floor(e.x), Math.floor(e.y))]).toBe(0);
+      if (Math.floor(e.y) === 10) crossings.add(Math.floor(e.x));
+    }
+    expect([...crossings]).toEqual([29]);
+    // A creep standing on a cell prevents building there.
+    const f = g.spawnEnemy('ghoul', 1, 1, 1, { x: 20.5, y: 20.5 });
+    expect(g.build('p0', 'h_block', 20, 20)).toMatch(/Gegner/);
+    expect(f.dead).toBe(false);
+  });
+
+  it('flying creeps ignore the maze', () => {
+    const g = mkGame(['human']);
+    g.players.get('p0')!.gold = 10000;
+    for (let x = 17; x < 29; x++) g.build('p0', 'h_block', x, 10);
+    const bat = g.spawnEnemy('bat', 1, 1, 1, { x: 23.5, y: 5.5 });
+    let lives = g.lives;
+    for (let i = 0; i < 600 && !bat.dead; i++) { g.tick(0.05); lives = g.lives; }
+    expect(bat.dead).toBe(true);
+    expect(lives).toBe(g.lives);
+    expect(g.lives).toBe(START_LIVES - 1);
+  });
+  it('kill gold goes to the lane defenders and leaks cost lives', () => {
     let over = false;
     const g = mkGame(['human', 'orc'], { gameOver: () => { over = true; } });
+    expect(g.lanes).toEqual([1, 2]);
     g.startWave();
     const goldBefore = g.players.get('p1')!.gold;
     g.players.get('p0')!.gold = 10000;
     for (const d of [3, 8, 13]) { const c = cellNear(g, 'p0', d); g.build('p0', 'h_watch', c.cx, c.cy); }
     run(g, 15);
     expect(g.players.get('p0')!.kills).toBeGreaterThan(0);
-    expect(g.players.get('p1')!.gold).toBeGreaterThan(goldBefore);
+    expect(g.players.get('p0')!.gold).toBeGreaterThan(10000 - 3 * TOWER_BY_ID.h_watch.cost);
+    // p1 defends another lane and has no towers: no kill gold from p0's lane.
+    expect(g.players.get('p1')!.gold).toBe(goldBefore);
     // Let everything else leak.
     for (const t of [...g.towers.values()]) g.sell('p0', t.id);
     g.lives = 2;
@@ -107,7 +151,7 @@ describe('Game simulation', () => {
     const c = cellNear(g, 'p0', 5);
     g.players.get('p0')!.gold = 10000;
     g.build('p0', 'h_arcane', c.cx, c.cy);
-    const golem = g.spawnEnemy('golem', 5, 1, 0);
+    const golem = g.spawnEnemy('golem', 5, 1, laneOf(g, 'p0'));
     run(g, 5);
     expect(golem.hp).toBe(golem.maxHp);
   });
@@ -117,19 +161,19 @@ describe('Game simulation', () => {
     g.players.get('p0')!.gold = 10000;
     const c = cellNear(g, 'p0', 5);
     g.build('p0', 'h_watch', c.cx, c.cy);
-    const shade = g.spawnEnemy('shade', 5, 1, 0);
+    const shade = g.spawnEnemy('shade', 5, 1, laneOf(g, 'p0'));
     run(g, 4);
     expect(shade.hp).toBe(shade.maxHp);
     const c2 = cellNear(g, 'p0', 12);
     g.build('p0', 'h_arcane', c2.cx, c2.cy);
-    const shade2 = g.spawnEnemy('shade', 5, 1, 0);
+    const shade2 = g.spawnEnemy('shade', 5, 1, laneOf(g, 'p0'));
     run(g, 4);
     expect(shade2.hp).toBeLessThan(shade2.maxHp);
   });
 
   it('splitting enemies spawn children on death', () => {
     const g = mkGame(['human']);
-    const slime = g.spawnEnemy('slime', 1, 1, 20);
+    const slime = g.spawnEnemy('slime', 1, 1, laneOf(g, 'p0'), routePoint(g, 'p0', 20));
     g.players.get('p0')!.gold = 10000;
     const c = cellNear(g, 'p0', 21);
     g.build('p0', 'h_cannon', c.cx, c.cy);
@@ -171,11 +215,11 @@ describe('Pause, save & load', () => {
     g.startWave();
     run(g, 2);
     g.paused = 'P0';
-    const snap = JSON.stringify(g.enemies.map((e) => [e.id, e.d, e.hp]));
+    const snap = JSON.stringify(g.enemies.map((e) => [e.id, e.x, e.y, e.hp]));
     const t = g.time;
     run(g, 5);
     expect(g.time).toBe(t);
-    expect(JSON.stringify(g.enemies.map((e) => [e.id, e.d, e.hp]))).toBe(snap);
+    expect(JSON.stringify(g.enemies.map((e) => [e.id, e.x, e.y, e.hp]))).toBe(snap);
     expect(g.snapshot().paused).toBe('P0');
     g.paused = null;
     run(g, 1);

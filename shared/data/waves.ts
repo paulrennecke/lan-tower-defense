@@ -1,7 +1,7 @@
 import { ENEMY_BY_ID } from './enemies';
 
 export const VICTORY_WAVE = 40;
-export const START_GOLD = 350;
+export const START_GOLD = 450;
 export const START_LIVES = 50;
 export const START_LUMBER = 0;
 export const FIRST_COUNTDOWN = 45;

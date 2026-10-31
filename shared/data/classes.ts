@@ -41,7 +41,7 @@ export type TowerShape =
   | 'ziggurat' | 'plague' | 'frost' | 'wagon' | 'obelisk' | 'throne'
   | 'ancient' | 'moonwell' | 'vines' | 'dryad' | 'nest' | 'worldtree'
   | 'fire' | 'water' | 'earth' | 'air' | 'magma' | 'vortex'
-  | 'gun' | 'rocket' | 'tesla' | 'mines' | 'bank' | 'zeppelin';
+  | 'gun' | 'rocket' | 'tesla' | 'mines' | 'bank' | 'zeppelin' | 'block';
 
 export interface TowerDef {
   id: string;
@@ -57,6 +57,8 @@ export interface TowerDef {
   shape: TowerShape;
   color: number;
   requires?: string;
+  /** Highest level index (default 2 = three levels). Maze blocks cannot be upgraded (0). */
+  maxLevel?: number;
 }
 
 export interface ResearchEffect {
@@ -120,6 +122,17 @@ const B = (s: Partial<TowerStats> & Pick<TowerStats, 'dmg' | 'cd' | 'range' | 'a
   ground: true, air: true, projSpeed: 16, ...s,
 });
 
+export const BLOCK_COST = 5;
+
+/** Cheap wall for mazing (Wintermaul style): blocks creeps, does not attack, cannot be upgraded. */
+function block(cls: string, id: string, name: string, desc: string, color: number): TowerDef {
+  const s: TowerStats = { dmg: 0, cd: 99, range: 0, atk: 'normal', ground: false, air: false, proj: 'none', projSpeed: 0 };
+  return {
+    id, cls, name, levelNames: [name, name, name], desc, cost: BLOCK_COST, lumber: 0, upCost: [0, 0], upLumber: [0, 0],
+    levels: [s, s, s], shape: 'block', color, maxLevel: 0,
+  };
+}
+
 const dmgResearch = (id: string, name: string, desc: string): ResearchDef => ({
   id, name, desc, maxLevel: 3, gold: [150, 350, 700], lumber: [1, 2, 3], perLevel: { dmgPct: 0.12 },
 });
@@ -133,19 +146,20 @@ const unlockResearch = (id: string, name: string, desc: string, towerId: string,
 // ---------------------------------------------------------------- Allianz
 const H = 'human';
 const human: ClassDef = {
-  id: H, name: 'Allianz', color: 0x3b6fd6,
+  id: H, name: 'Allianz (Bauer)', color: 0x3b6fd6,
   desc: 'Disziplinierte Menschen mit soliden Allroundern: Bogenschützen, Kanonen und Arkanmagie. Leicht zu spielen.',
   towers: [
-    tower(H, 'h_watch', 'Wachturm', ['Wachturm', 'Wehrturm', 'Bergfried'], 'Schneller Pfeilturm gegen Boden & Luft.', 90,
+    block(H, 'h_block', 'Steinwall', 'Billiger Mauerstein zum Mazen (5 Gold). Blockiert den Weg, greift nicht an.', 0x9a9a9a),
+    tower(H, 'h_watch', 'Pfeilturm', ['Pfeilturm', 'Verbesserter Pfeilturm', 'Meisterpfeilturm'], 'Schneller Pfeilturm gegen Boden & Luft.', 90,
       B({ dmg: 15, cd: 0.85, range: 5, atk: 'pierce', proj: 'arrow', projSpeed: 20 }), 'watchtower', 0x8a8f99),
-    tower(H, 'h_cannon', 'Kanonenturm', ['Kanonenturm', 'Mörserturm', 'Belagerungsbastion'], 'Flächenschaden gegen Bodentruppen. Stark gegen Befestigt.', 130,
+    tower(H, 'h_cannon', 'Kanonenturm', ['Kanonenturm', 'Schwerer Kanonenturm', 'Belagerungskanone'], 'Flächenschaden gegen Bodentruppen. Stark gegen Befestigt.', 130,
       B({ dmg: 34, cd: 2.0, range: 4.5, atk: 'siege', proj: 'cannon', projSpeed: 10, air: false, splash: 1.5 }), 'cannon', 0x6b6b6b),
     tower(H, 'h_arcane', 'Arkaner Turm', ['Arkaner Turm', 'Arkanes Heiligtum', 'Violette Zitadelle'], 'Magischer Schaden, deckt Unsichtbare auf. Stark gegen Schwer.', 120,
       B({ dmg: 24, cd: 1.3, range: 5, atk: 'magic', proj: 'orb', projSpeed: 14, detect: true }), 'arcane', 0x7a5cff),
     tower(H, 'h_church', 'Kirche', ['Kirche', 'Kathedrale', 'Kathedrale des Lichts'], 'Heilige Aura: erhöht das Angriffstempo naher Türme.', 150,
       B({ dmg: 8, cd: 1.5, range: 4, atk: 'magic', proj: 'orb', aura: { range: 4, speed: 0.15 } }), 'church', 0xf2e6b8,
       { l2: { aura: { range: 4.5, speed: 0.22 } }, l3: { aura: { range: 5, speed: 0.3 } } }),
-    tower(H, 'h_gryphon', 'Greifenhorst', ['Greifenhorst', 'Greifenfeste', 'Sturmhammer-Horst'], 'Nur Luftziele, aber sehr hoher Schaden.', 120,
+    tower(H, 'h_gryphon', 'Luftturm', ['Luftturm', 'Greifenturm', 'Sturmhammer-Turm'], 'Nur Luftziele, aber sehr hoher Schaden.', 120,
       B({ dmg: 30, cd: 0.8, range: 6, atk: 'normal', proj: 'bolt', projSpeed: 18, ground: false }), 'gryphon', 0xc9a227),
     tower(H, 'h_mage', 'Erzmagierturm', ['Erzmagierturm', 'Turm von Dalaran', 'Kirin Tor'], 'Ultimativ: Kettenblitz der auf viele Gegner überspringt.', 450,
       B({ dmg: 90, cd: 1.0, range: 6.5, atk: 'magic', proj: 'lightning', projSpeed: 0, chain: 4, chainFalloff: 0.85, detect: true }), 'mage', 0x4fc3ff,
@@ -162,19 +176,20 @@ const human: ClassDef = {
 // ---------------------------------------------------------------- Horde
 const O = 'orc';
 const orc: ClassDef = {
-  id: O, name: 'Horde', color: 0xc0392b,
+  id: O, name: 'Horde (Peon)', color: 0xc0392b,
   desc: 'Brutale Orcs mit Katapulten, Kettenblitzen und Kriegstrommeln, die nahe Türme in Raserei versetzen.',
   towers: [
-    tower(O, 'o_spear', 'Speerwerfer', ['Speerwerfer', 'Kopfjäger-Bau', 'Berserker-Turm'], 'Wirft Speere auf Boden & Luft.', 85,
+    block(O, 'o_block', 'Palisade', 'Billige Holzpalisade zum Mazen (5 Gold). Blockiert den Weg, greift nicht an.', 0x7a5230),
+    tower(O, 'o_spear', 'Speerturm', ['Speerturm', 'Kopfjägerturm', 'Berserkerturm'], 'Wirft Speere auf Boden & Luft.', 85,
       B({ dmg: 16, cd: 1.0, range: 4.5, atk: 'pierce', proj: 'spear', projSpeed: 16 }), 'spear', 0x8b5a2b),
     tower(O, 'o_catapult', 'Katapult', ['Katapult', 'Zerstörer', 'Verwüster'], 'Riesige Reichweite und Flächenschaden gegen Boden.', 150,
       B({ dmg: 52, cd: 3.0, range: 6, atk: 'siege', proj: 'rock', projSpeed: 8, air: false, splash: 2.0 }), 'catapult', 0x7a4a1e),
     tower(O, 'o_drum', 'Kriegstrommel', ['Kriegstrommel', 'Donnertrommel', 'Trommel des Krieges'], 'Aura: erhöht den Schaden naher Türme.', 140,
       B({ dmg: 0, cd: 99, range: 0, atk: 'normal', proj: 'none', ground: false, air: false, aura: { range: 4.5, dmg: 0.15 } }), 'drum', 0xa0522d,
       { l2: { aura: { range: 5, dmg: 0.22 } }, l3: { aura: { range: 5.5, dmg: 0.3 } } }),
-    tower(O, 'o_shaman', 'Schamanenturm', ['Schamanenturm', 'Geisterlodge', 'Thrall-Schrein'], 'Kettenblitz, deckt Unsichtbare auf (Geisterwolf-Sicht).', 140,
+    tower(O, 'o_shaman', 'Blitzturm', ['Blitzturm', 'Sturmturm', 'Donnerturm'], 'Kettenblitz, deckt Unsichtbare auf (Geisterwolf-Sicht).', 140,
       B({ dmg: 26, cd: 1.6, range: 5, atk: 'magic', proj: 'lightning', projSpeed: 0, chain: 3, chainFalloff: 0.8, detect: true }), 'shaman', 0x3fa9f5),
-    tower(O, 'o_wyvern', 'Windreiter-Horst', ['Windreiter-Horst', 'Windreiter-Bau', 'Himmelsfeste'], 'Nur Luft. Fangnetz kann Flieger betäuben.', 120,
+    tower(O, 'o_wyvern', 'Luftturm', ['Luftturm', 'Windreiterturm', 'Himmelsfeste'], 'Nur Luft. Fangnetz kann Flieger betäuben.', 120,
       B({ dmg: 26, cd: 0.7, range: 6, atk: 'pierce', proj: 'spear', projSpeed: 20, ground: false, stun: 0.15, stunDur: 1 }), 'wyvern', 0x9b3d2f),
     tower(O, 'o_fortress', 'Festung des Häuptlings', ['Festung des Häuptlings', 'Höllschrei-Feste', 'Zorn des Kriegshäuptlings'], 'Ultimativ: Erdbeben mit Chaos-Schaden in großem Radius.', 450,
       B({ dmg: 130, cd: 1.4, range: 4, atk: 'chaos', proj: 'none', projSpeed: 0, air: false, splash: 2.5, stun: 0.15, stunDur: 0.6 }), 'fortress', 0x5c1f14,
@@ -191,14 +206,15 @@ const orc: ClassDef = {
 // ---------------------------------------------------------------- Untote
 const U = 'undead';
 const undead: ClassDef = {
-  id: U, name: 'Geißel', color: 0x7d3c98,
+  id: U, name: 'Geißel (Akolyth)', color: 0x7d3c98,
   desc: 'Die Untoten verlangsamen, vergiften und zersetzen die Rüstung ihrer Feinde. Stark im Zusammenspiel.',
   towers: [
+    block(U, 'u_block', 'Knochenwall', 'Billiger Knochenwall zum Mazen (5 Gold). Blockiert den Weg, greift nicht an.', 0xd8d0b8),
     tower(U, 'u_spirit', 'Geisterturm', ['Geisterturm', 'Nerubischer Turm', 'Ziggurat der Verdammnis'], 'Seelenprojektile gegen Boden & Luft.', 100,
       B({ dmg: 19, cd: 0.95, range: 5, atk: 'normal', proj: 'skull', projSpeed: 15 }), 'ziggurat', 0x5b4a7a),
-    tower(U, 'u_plague', 'Seuchenturm', ['Seuchenturm', 'Pestkessel', 'Seuchenquelle'], 'Giftwolke: Flächenschaden über Zeit.', 120,
+    tower(U, 'u_plague', 'Giftturm', ['Giftturm', 'Seuchenturm', 'Pestquelle'], 'Giftwolke: Flächenschaden über Zeit.', 120,
       B({ dmg: 6, cd: 1.5, range: 4, atk: 'normal', proj: 'poison', projSpeed: 10, air: false, splash: 1.6, dot: 12, dotDur: 4 }), 'plague', 0x6fbf3a),
-    tower(U, 'u_frost', 'Frostturm', ['Frostturm', 'Eisturm', 'Turm des Lichkönigs'], 'Verlangsamt Gegner stark.', 110,
+    tower(U, 'u_frost', 'Frostturm', ['Frostturm', 'Eisturm', 'Gletscherturm'], 'Verlangsamt Gegner stark.', 110,
       B({ dmg: 10, cd: 1.2, range: 4.5, atk: 'magic', proj: 'frost', projSpeed: 14, slow: 0.25, slowDur: 2 }), 'frost', 0x9fd8ff,
       { l2: { slow: 0.35 }, l3: { slow: 0.45 } }),
     tower(U, 'u_wagon', 'Fleischwagen', ['Fleischwagen', 'Leichenkarren', 'Knochenkatapult'], 'Wirft Leichen: Fläche + Seuche gegen Boden.', 150,
@@ -221,10 +237,11 @@ const undead: ClassDef = {
 // ---------------------------------------------------------------- Nachtelfen
 const N = 'nightelf';
 const nightelf: ClassDef = {
-  id: N, name: 'Nachtelfen', color: 0x1abc9c,
+  id: N, name: 'Nachtelfen (Irrlicht)', color: 0x1abc9c,
   desc: 'Uralte Wächter und Naturmagie. Kritische Treffer, Wurzeln und der Mondbrunnen stärken alle Türme in der Nähe.',
   towers: [
-    tower(N, 'n_ancient', 'Uralter Schütze', ['Uralter Schütze', 'Uralter Wächter', 'Uralter Krieger'], 'Präzise Pfeile mit Chance auf kritische Treffer.', 95,
+    block(N, 'n_block', 'Dornenhecke', 'Billige Hecke zum Mazen (5 Gold). Blockiert den Weg, greift nicht an.', 0x2e6b30),
+    tower(N, 'n_ancient', 'Mondpfeilturm', ['Mondpfeilturm', 'Uralter Wächter', 'Uralter Krieger'], 'Präzise Pfeile mit Chance auf kritische Treffer.', 95,
       B({ dmg: 15, cd: 0.8, range: 5.5, atk: 'pierce', proj: 'arrow', projSpeed: 20, crit: 0.15, critMult: 2 }), 'ancient', 0x4e7d3a),
     tower(N, 'n_moonwell', 'Mondbrunnen', ['Mondbrunnen', 'Mondquelle', 'Elunes Segen'], 'Aura: Angriffstempo + Schaden naher Türme. Deckt Unsichtbare auf.', 160,
       B({ dmg: 0, cd: 99, range: 4, atk: 'magic', proj: 'none', ground: false, air: false, detect: true, aura: { range: 4, speed: 0.1, dmg: 0.08 } }), 'moonwell', 0x7fd3ff,
@@ -234,7 +251,7 @@ const nightelf: ClassDef = {
       { l2: { stun: 0.3 }, l3: { stun: 0.35, stunDur: 1.1 } }),
     tower(N, 'n_dryad', 'Dryadenhain', ['Dryadenhain', 'Cenarius-Hain', 'Hain der Ewigkeit'], 'Giftspeere verlangsamen. Eulenwächter decken Unsichtbare auf.', 120,
       B({ dmg: 20, cd: 0.9, range: 5, atk: 'pierce', proj: 'spear', projSpeed: 18, slow: 0.15, slowDur: 1.5, detect: true }), 'dryad', 0x8bc34a),
-    tower(N, 'n_nest', 'Hippogreifen-Nest', ['Hippogreifen-Nest', 'Hippogreifen-Horst', 'Sturmkrähen-Nest'], 'Nur Luft, sehr schnelle Angriffe.', 120,
+    tower(N, 'n_nest', 'Luftturm', ['Luftturm', 'Hippogreifenturm', 'Sturmkrähenturm'], 'Nur Luft, sehr schnelle Angriffe.', 120,
       B({ dmg: 22, cd: 0.6, range: 6.5, atk: 'normal', proj: 'moon', projSpeed: 20, ground: false }), 'nest', 0x9575cd),
     tower(N, 'n_worldtree', 'Weltenbaum', ['Weltenbaum', 'Nordrassil', 'Teldrassil'], 'Ultimativ: schießt auf 3 Ziele, Aura + Unsichtbarkeitserkennung.', 450,
       B({ dmg: 45, cd: 0.7, range: 6, atk: 'normal', proj: 'leaf', projSpeed: 18, multi: 3, detect: true, aura: { range: 5, speed: 0.15 } }), 'worldtree', 0x2ecc71,
@@ -251,15 +268,16 @@ const nightelf: ClassDef = {
 // ---------------------------------------------------------------- Elementar
 const E = 'element';
 const element: ClassDef = {
-  id: E, name: 'Elementarist', color: 0xe67e22,
+  id: E, name: 'Elementarist (Golem)', color: 0xe67e22,
   desc: 'Wie Element TD: Feuer, Wasser, Erde und Luft – erforsche Fusionen für den Magmaturm und den Elementarvortex.',
   towers: [
-    tower(E, 'e_fire', 'Feuerturm', ['Feuerturm', 'Flammenturm', 'Inferno'], 'Brennt Gegner (Schaden über Zeit) in kleinem Radius.', 110,
+    block(E, 'e_block', 'Eisblock', 'Gefrorener Block zum Mazen (5 Gold). Blockiert den Weg, greift nicht an.', 0x9fd8ff),
+    tower(E, 'e_fire', 'Flammenturm', ['Flammenturm', 'Feuerturm', 'Inferno'], 'Brennt Gegner (Schaden über Zeit) in kleinem Radius.', 110,
       B({ dmg: 18, cd: 1.0, range: 4.5, atk: 'magic', proj: 'fire', projSpeed: 14, splash: 1.0, dot: 6, dotDur: 3 }), 'fire', 0xff5722),
     tower(E, 'e_water', 'Wasserturm', ['Wasserturm', 'Flutturm', 'Gezeitenturm'], 'Verlangsamt mit Wasserstrahlen.', 110,
       B({ dmg: 14, cd: 1.0, range: 5, atk: 'magic', proj: 'water', projSpeed: 14, slow: 0.2, slowDur: 2 }), 'water', 0x2196f3,
       { l2: { slow: 0.28 }, l3: { slow: 0.36 } }),
-    tower(E, 'e_earth', 'Erdturm', ['Erdturm', 'Felsturm', 'Bergfeste'], 'Schwere Felsen, Fläche & Betäubung gegen Boden.', 120,
+    tower(E, 'e_earth', 'Felsturm', ['Felsturm', 'Erdturm', 'Bergfeste'], 'Schwere Felsen, Fläche & Betäubung gegen Boden.', 120,
       B({ dmg: 36, cd: 1.8, range: 4.5, atk: 'siege', proj: 'rock', projSpeed: 10, air: false, splash: 1.2, stun: 0.1, stunDur: 0.6 }), 'earth', 0x8d6e63),
     tower(E, 'e_air', 'Luftturm', ['Luftturm', 'Sturmturm', 'Zyklon'], 'Zwei Ziele gleichzeitig, deckt Unsichtbare auf.', 110,
       B({ dmg: 8, cd: 0.7, range: 5.5, atk: 'pierce', proj: 'wind', projSpeed: 22, multi: 2, detect: true }), 'air', 0xb2ebf2),
@@ -281,16 +299,17 @@ const element: ClassDef = {
 // ---------------------------------------------------------------- Goblins
 const G = 'goblin';
 const goblin: ClassDef = {
-  id: G, name: 'Goblin-Ingenieure', color: 0xf1c40f,
+  id: G, name: 'Goblins (Schredder)', color: 0xf1c40f,
   desc: 'Technik und Profit! Maschinengewehre, Raketen, Teslaspulen, Minen – und eine Bank, die Zinsen abwirft.',
   towers: [
+    block(G, 'g_block', 'Schrottbarrikade', 'Billige Barrikade zum Mazen (5 Gold). Blockiert den Weg, greift nicht an.', 0x8a7a60),
     tower(G, 'g_gun', 'Maschinengewehr', ['Maschinengewehr', 'Gatling', 'Bleisturm'], 'Extrem schnelle, schwache Schüsse.', 100,
       B({ dmg: 5, cd: 0.3, range: 4.5, atk: 'normal', proj: 'bullet', projSpeed: 30 }), 'gun', 0x9e9e9e),
     tower(G, 'g_rocket', 'Raketenturm', ['Raketenturm', 'Raketenbatterie', 'Goblin-Artillerie'], 'Raketen mit Flächenschaden auf Boden & Luft.', 140,
       B({ dmg: 32, cd: 1.6, range: 6, atk: 'siege', proj: 'rocket', projSpeed: 11, splash: 1.2 }), 'rocket', 0xb71c1c),
-    tower(G, 'g_tesla', 'Teslaspule', ['Teslaspule', 'Hochspannungsspule', 'Blitzableiter 9000'], 'Kettenblitze, Radar erkennt Unsichtbare.', 140,
+    tower(G, 'g_tesla', 'Teslaturm', ['Teslaturm', 'Hochspannungsturm', 'Blitzableiter 9000'], 'Kettenblitze, Radar erkennt Unsichtbare.', 140,
       B({ dmg: 24, cd: 1.2, range: 4.5, atk: 'magic', proj: 'lightning', projSpeed: 0, chain: 3, chainFalloff: 0.75, stun: 0.1, stunDur: 0.3, detect: true }), 'tesla', 0x00e5ff),
-    tower(G, 'g_mines', 'Minenleger', ['Minenleger', 'Sprengmeister', 'Bombenwerkstatt'], 'Verteilt Minen auf dem Pfad in Reichweite.', 120,
+    tower(G, 'g_mines', 'Minenleger', ['Minenleger', 'Sprengmeister', 'Bombenwerkstatt'], 'Verteilt Minen auf freie Felder in Reichweite.', 120,
       B({ dmg: 0, cd: 2.5, range: 4, atk: 'siege', proj: 'none', air: false, mine: { dmg: 55, radius: 1.3, max: 6 } }), 'mines', 0x795548),
     tower(G, 'g_bank', 'Goblin-Bank', ['Goblin-Bank', 'Handelskontor', 'Goldenes Kartell'], 'Greift nicht an, bringt aber Gold zu jeder Welle.', 200,
       B({ dmg: 0, cd: 99, range: 0, atk: 'normal', proj: 'none', ground: false, air: false, income: 15 }), 'bank', 0xffd54f,

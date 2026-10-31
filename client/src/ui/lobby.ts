@@ -23,8 +23,8 @@ export class LobbyUI {
     this.el = document.createElement('div');
     this.el.id = 'lobby';
     this.el.innerHTML = `
-      <h1>⚔ Schlacht um Azeroth ⚔</h1>
-      <div class="subtitle">Kooperatives LAN Tower Defense für bis zu ${MAX_PLAYERS} Spieler – 40 Wellen, danach Endlos-Modus</div>
+      <h1>❄ Wintermaul TD ❄</h1>
+      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil der Warcraft-III-Karte Wintermaul – bis zu ${MAX_PLAYERS} Spieler, 40 Wellen, danach Endlos-Modus</div>
       <div class="lobby-grid">
         <div>
           <div class="panel">
@@ -41,14 +41,16 @@ export class LobbyUI {
           <div class="panel help" style="margin-top:16px">
             <h2 style="margin-top:0">So wird gespielt</h2>
             <ul>
-              <li>Alle Spieler verteidigen <b>gemeinsam</b> einen Pfad. Jeder hat eigene, farbig markierte <b>Bauabschnitte</b>.</li>
-              <li>Jeder Kill bringt <b>allen</b> Spielern Gold. Zu jeder Welle gibt es Einkommen und <b>Holz</b> für Forschung &amp; Ultimate-Türme.</li>
+              <li>Die Gegner kommen oben aus bis zu <b>vier Portalen</b> und laufen durch die verschneiten Spuren zum <b>Tor</b> im Süden. Jeder Spieler verteidigt farbig markierte <b>Bauzonen</b> einer Spur.</li>
+              <li><b>Es gibt keinen festen Weg:</b> Die Gegner nehmen immer den kürzesten Weg um eure Türme herum. Baut <b>Labyrinthe</b> (Mazes) mit billigen <b>Mauerblöcken</b> (Taste 1, 5 Gold), damit sie lange unter Beschuss laufen. Die rote Linie zeigt den aktuellen Weg.</li>
+              <li>Den Weg <b>komplett blockieren</b> geht nicht – es muss immer ein Durchgang bleiben. <b>Flieger</b> ignorieren das Labyrinth und fliegen direkt zum Tor.</li>
+              <li>Kills bringen den Verteidigern der Spur Gold. Zu jeder Welle gibt es Einkommen und <b>Holz</b> für Forschung &amp; Ultimate-Türme.</li>
               <li>Durchgelassene Gegner kosten gemeinsame Leben. Bosse kosten viele Leben!</li>
               <li>Achtung: <b>Luft</b>-Wellen, <b>unsichtbare</b> Gegner (brauchen Erkennung) und <b>Magieimmune</b> (kein Magieschaden).</li>
             </ul>
             <h3>Steuerung</h3>
             <ul>
-              <li><b>1–6</b> Turm wählen · <b>Linksklick</b> bauen (<b>Shift</b> = mehrere) · <b>Rechtsklick/Esc</b> abbrechen</li>
+              <li><b>1</b> Mauerblock · <b>2–7</b> Turm wählen · <b>Linksklick</b> bauen (<b>Shift</b> = mehrere) · <b>Rechtsklick/Esc</b> abbrechen</li>
               <li>Turm anklicken: <b>U</b> aufwerten · <b>V</b> verkaufen · <b>F</b> Forschung · <b>N</b> bereit für nächste Welle</li>
               <li>Kamera: <b>Pfeiltasten</b>, Bildschirmrand, <b>rechte/mittlere Maustaste</b> ziehen, <b>Mausrad</b> zoomen, <b>Leertaste</b> = eigener Abschnitt</li>
               <li><b>Alt+Klick</b> Ping für alle · <b>Enter</b> Chat · <b>Tab</b> Punktestand</li>

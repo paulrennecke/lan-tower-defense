@@ -390,6 +390,13 @@ export function createTowerModel(def: TowerDef, level: number, owner: number): T
       add(coin); spin.push({ o: coin, speed: 2, axis: 'z' }); bob.push({ o: coin, base: 2.3, amp: 0.1, speed: 2 });
       muzzleY = 2; break;
     }
+    case 'block': {
+      // Maze wall: chunky blocks in the class colour with a snow cap.
+      add(P('box', mat(c), [1.7, 0.9, 1.7], [0, 0.65, 0]),
+        P('box', mat(c), [1.3, 0.5, 1.3], [0.1, 1.3, -0.05], [0, 0.3, 0]),
+        P('box', mat(0xf4f8ff), [1.35, 0.12, 1.35], [0.1, 1.6, -0.05], [0, 0.3, 0]));
+      muzzleY = 1.2; break;
+    }
     case 'zeppelin': {
       add(P('cyl', mat(METAL, { metal: 0.5 }), [0.2, 2.6, 0.2], [0, 1.5, 0]), P('box', mat(0x5d4037), [1.2, 0.2, 1.2], [0, 0.4, 0]));
       const zep = new THREE.Group(); zep.position.y = 3.3;
@@ -523,12 +530,12 @@ export function createEnemyModel(def: EnemyDef, ghost = false): EnemyModel {
 export function createTree(rand: () => number): THREE.Group {
   const g = new THREE.Group();
   const h = 1.5 + rand() * 1.5;
-  const pine = rand() > 0.35;
-  g.add(P('cyl', mat(0x5a3d22), [0.15, h * 0.5, 0.15], [0, h * 0.25, 0]));
-  if (pine) {
-    for (let i = 0; i < 3; i++) g.add(P('cone', mat(i % 2 ? 0x2e6b30 : 0x3a7d3a), [0.9 - i * 0.22, h * 0.5, 0.9 - i * 0.22], [0, h * 0.5 + i * h * 0.25, 0]));
-  } else {
-    g.add(P('ico', mat(rand() > 0.5 ? 0x4a8f3a : 0x6a9f3a), [0.9, 0.8, 0.9], [0, h * 0.75, 0]));
+  g.add(P('cyl', mat(0x4a3322), [0.15, h * 0.5, 0.15], [0, h * 0.25, 0]));
+  // Snowy pines (Wintermaul).
+  for (let i = 0; i < 3; i++) {
+    const w = 0.9 - i * 0.22, y = h * 0.5 + i * h * 0.25;
+    g.add(P('cone', mat(i % 2 ? 0x1f4a33 : 0x285a3c), [w, h * 0.5, w], [0, y, 0]));
+    g.add(P('cone', mat(0xf2f6fb), [w * 0.62, h * 0.2, w * 0.62], [0, y + h * 0.17, 0]));
   }
   g.rotation.y = rand() * Math.PI;
   const s = 0.8 + rand() * 0.6;
@@ -538,7 +545,16 @@ export function createTree(rand: () => number): THREE.Group {
 
 export function createRock(rand: () => number): THREE.Mesh {
   const s = 0.3 + rand() * 0.6;
-  return P('dod', mat(rand() > 0.5 ? 0x8a8478 : 0x6f6a60), [s, s * 0.7, s], [0, s * 0.3, 0], [rand(), rand(), rand()]);
+  return P('dod', mat(rand() > 0.5 ? 0x8a93a0 : 0x6f7884), [s, s * 0.7, s], [0, s * 0.3, 0], [rand(), rand(), rand()]);
+}
+
+/** Ice cliff chunk filling one blocked cell. */
+export function createIceCliff(rand: () => number): THREE.Group {
+  const g = new THREE.Group();
+  const h = 1.6 + rand() * 1.8;
+  g.add(P('dod', mat(rand() > 0.5 ? 0xbcd6ea : 0xa6c4dc, { rough: 0.35 }), [1.25, h, 1.25], [0, h * 0.35, 0], [rand(), rand() * 3, rand() * 0.3]));
+  g.add(P('dod', mat(0xf4f8ff, { rough: 0.6 }), [0.95, 0.4, 0.95], [0, h * 0.95, 0], [0, rand() * 3, 0]));
+  return g;
 }
 
 export function createPortal(): THREE.Group {

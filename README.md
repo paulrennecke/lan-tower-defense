@@ -1,7 +1,8 @@
-# ⚔ Schlacht um Azeroth – LAN Tower Defense
+# ❄ Wintermaul TD – LAN Tower Defense
 
-Kooperatives 3D-Tower-Defense im Browser für **bis zu 16 Spieler im lokalen Netzwerk**, inspiriert von den
-Tower-Defense-Mods aus Warcraft 3 (Element TD, Legion TD, Wintermaul …).
+Kooperatives 3D-Maze-Tower-Defense im Browser für **bis zu 16 Spieler im lokalen Netzwerk**, nachempfunden der
+Warcraft-III-Karte **Wintermaul TD**: verschneite Karte, Gegner aus mehreren Portalen im Norden, ein Tor im Süden –
+und kein fester Weg, sondern **Labyrinthe (Mazes)**, die die Spieler selbst bauen.
 
 Ein Rechner startet den Server, alle anderen öffnen einfach die angezeigte Adresse im Browser – keine Installation
 auf den Mitspieler-Rechnern nötig.
@@ -39,17 +40,26 @@ netsh advfirewall firewall add rule name="LAN Tower Defense" dir=in action=allow
 ## Spielablauf
 
 1. **Lobby:** Namen eingeben, eine von 6 Klassen wählen, „Bereit“ klicken. Der Host (👑) startet das Spiel.
-2. Die Karte hat einen langen, gewundenen Pfad. Er ist in **16 Bauabschnitte** aufgeteilt, die reihum an die Spieler
-   verteilt werden (jeder bekommt frühe und späte Stücke des Pfads). Eigene Abschnitte sind in deiner Farbe markiert.
-3. **40 Wellen** mit immer stärkeren Gegnern – alle 10 Wellen ein **Boss**. Danach geht es im **Endlos-Modus**
+2. **Die Karte (Wintermaul-Stil):** Vier Portale im Norden öffnen je eine verschneite **Spur** zwischen Eisklippen.
+   Jede Spur hat 4 Bauzonen (insgesamt **16 Zonen**), unten laufen alle Spuren in einem Trichter zum **Tor** zusammen.
+   - 1 Spieler verteidigt eine Spur, 2–4 Spieler bekommen je eine eigene Spur, ab 5 Spielern teilen sich Spieler
+     eine Spur zonenweise. Nur Spuren mit Verteidigern bekommen Gegner.
+   - Jede aktive Spur erhält die **komplette Welle**; die Lebenspunkte skalieren mit der Spielerzahl pro Spur.
+3. **Mazing:** Es gibt keinen festen Pfad. Bodengegner laufen immer den kürzesten Weg um die Türme herum. Mit billigen
+   **Mauerblöcken** (5 Gold, Taste 1) baut man Wände mit Lücken, sodass die Gegner Schlangenlinien laufen müssen.
+   - Die **rote gestrichelte Linie** zeigt den aktuellen Weg, im Baumenü steht die **Weglänge** je Spur.
+   - Den Weg komplett zu **blockieren** ist nicht erlaubt (das Bau-Feld wird rot). Auch auf Gegnern kann man nicht bauen.
+   - **Flieger** ignorieren das Labyrinth und fliegen direkt zum Tor.
+4. **40 Wellen** mit immer stärkeren Gegnern – alle 10 Wellen ein **Boss**. Danach geht es im **Endlos-Modus**
    weiter; der Rekord (erreichte Welle) wird gespeichert.
-4. Durchgelassene Gegner kosten **gemeinsame Leben** (50). Bei 0 ist das Spiel für alle verloren.
+5. Durchgelassene Gegner kosten **gemeinsame Leben** (50, +10 je weiterer aktiver Spur). Bei 0 ist das Spiel verloren.
 
 ### Wirtschaft
 
-- **Gold** ist pro Spieler. Jeder Kill bringt **allen** Spielern Gold (Teamplay statt Kill-Stealing).
+- **Gold** ist pro Spieler (Start: 450). Kills bringen allen Verteidigern der jeweiligen Spur Gold – hilft ein Turm
+  aus einer anderen Spur aus, bekommt dessen Besitzer das Kopfgeld ebenfalls.
 - Zu Beginn jeder Welle gibt es Einkommen (+ Goblin-Bank/Investitionen) und **Holz**.
-- **Holz** braucht man für Forschung und die Ultimate-Türme. Besiegte Bosse geben +2 Holz für alle.
+- **Holz** braucht man für Forschung und die Ultimate-Türme. Besiegte Bosse geben den Verteidigern ihrer Spur +2 Holz.
 - Verkaufen erstattet 75 % der Investition.
 
 ### Kampfsystem (wie WC3)
@@ -60,7 +70,7 @@ Spezialgegner:
 
 | Gegner-Eigenschaft | Was hilft |
 |---|---|
-| **Luft** | Türme mit Ziel „Luft“ (z. B. Greifenhorst, Windreiter, Hippogreifen) |
+| **Luft** | Türme mit Ziel „Luft“ (z. B. die Lufttürme der Klassen) |
 | **Unsichtbar** | Türme mit **Erkennung** in der Nähe (Arkaner Turm, Schamane, Obsidianstatue, Mondbrunnen, Dryadenhain, Luftturm, Teslaspule) |
 | **Magieimmun** | Kein Magie-Schaden, keine Slows/Betäubungen – Belagerung/Chaos benutzen |
 | **Heiler / Regeneration** | Schaden bündeln, Fokus „Stärkster“ |
@@ -70,20 +80,25 @@ Spezialgegner:
 
 | Klasse | Stil | Türme |
 |---|---|---|
-| 🛡️ **Allianz** | Allrounder | Wachturm, Kanonenturm, Arkaner Turm, Kirche (Tempo-Aura), Greifenhorst, *Erzmagierturm* |
-| 🪓 **Horde** | Rohe Gewalt | Speerwerfer, Katapult, Kriegstrommel (Schadens-Aura), Schamanenturm, Windreiter-Horst, *Festung des Häuptlings* |
-| ☠️ **Geißel** | Debuffs | Geisterturm, Seuchenturm, Frostturm, Fleischwagen, Obsidianstatue, *Frostthron* |
-| 🌙 **Nachtelfen** | Natur & Auren | Uralter Schütze, Mondbrunnen, Dornenranke, Dryadenhain, Hippogreifen-Nest, *Weltenbaum* |
-| 🔥 **Elementarist** | Element TD | Feuer, Wasser, Erde, Luft, *Magmaturm (Fusion)*, *Elementarvortex* |
-| ⚙️ **Goblin-Ingenieure** | Technik & Profit | Maschinengewehr, Raketenturm, Teslaspule, Minenleger, Goblin-Bank, *Zeppelin-Werft* |
+Wie in Wintermaul baut jede Rasse mit ihrem eigenen Baumeister. Slot 1 ist immer ein billiger Mauerblock zum Mazen.
 
-Jeder Turm hat **3 Stufen**. Jede Klasse hat **4 Forschungen** (globale Boni und die Freischaltung des Ultimate-Turms).
+| Klasse (Baumeister) | Stil | Mauerblock | Türme |
+|---|---|---|---|
+| 🛡️ **Allianz** (Bauer) | Allrounder | Steinwall | Pfeilturm, Kanonenturm, Arkaner Turm, Kirche (Tempo-Aura), Luftturm, *Erzmagierturm* |
+| 🪓 **Horde** (Peon) | Rohe Gewalt | Palisade | Speerturm, Katapult, Kriegstrommel (Schadens-Aura), Blitzturm, Luftturm, *Festung des Häuptlings* |
+| ☠️ **Geißel** (Akolyth) | Debuffs | Knochenwall | Geisterturm, Giftturm, Frostturm, Fleischwagen, Obsidianstatue, *Frostthron* |
+| 🌙 **Nachtelfen** (Irrlicht) | Natur & Auren | Dornenhecke | Mondpfeilturm, Mondbrunnen, Dornenranke, Dryadenhain, Luftturm, *Weltenbaum* |
+| 🔥 **Elementarist** (Golem) | Elemente | Eisblock | Flammenturm, Wasserturm, Felsturm, Luftturm, *Magmaturm (Fusion)*, *Elementarvortex* |
+| ⚙️ **Goblins** (Schredder) | Technik & Profit | Schrottbarrikade | Maschinengewehr, Raketenturm, Teslaturm, Minenleger, Goblin-Bank, *Zeppelin-Werft* |
+
+Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschungen** (globale Boni und die Freischaltung des Ultimate-Turms).
 
 ### Steuerung
 
 | Taste | Aktion |
 |---|---|
-| **1–6** | Turm zum Bauen wählen |
+| **1** | Mauerblock zum Mazen |
+| **2–7** | Turm zum Bauen wählen |
 | **Linksklick** | Bauen / Auswählen (**Shift** gedrückt = mehrere bauen) |
 | **Rechtsklick / Esc** | Bauen abbrechen / Auswahl aufheben |
 | **U** / **V** | Ausgewählten Turm aufwerten / verkaufen |
@@ -91,7 +106,7 @@ Jeder Turm hat **3 Stufen**. Jede Klasse hat **4 Forschungen** (globale Boni und
 | **N** | Bereit für die nächste Welle (wenn alle bereit sind, startet sie in 3 s) |
 | **Pfeiltasten**, Bildschirmrand, **rechte/mittlere Maustaste ziehen** | Kamera bewegen |
 | **Mausrad** | Zoomen |
-| **Leertaste** | Zu eigenen Abschnitten springen |
+| **Leertaste** | Zu eigenen Bauzonen springen |
 | **Alt + Klick** | Ping auf der Karte für alle |
 | **Enter** | Chat |
 | **Tab** (halten) | Punktestand |
@@ -128,7 +143,7 @@ tests/    Vitest (Regeln, Simulation, Server-Protokoll)
 ```
 
 - Der **Server ist autoritativ**: Clients schicken nur Befehle (bauen, aufwerten, …). Der Server sendet 10× pro
-  Sekunde einen kompakten Snapshot (Gegner nur als Position auf dem Pfad), die Clients interpolieren dazwischen.
+  Sekunde einen kompakten Snapshot (Gegner als Position auf der Karte), die Clients interpolieren dazwischen.
 - Alle Grafiken werden im Code aus einfachen Formen erzeugt – keine externen Assets.
 - Bandbreite: ca. 25 KiB/s pro Client bei 16 Spielern.
 

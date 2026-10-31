@@ -2,7 +2,10 @@ import { ARMOR_NAMES } from '../../../shared/damage';
 import { CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/classes';
 import { ENEMY_BY_ID } from '../../../shared/data/enemies';
 import { VICTORY_WAVE, getWave } from '../../../shared/data/waves';
-import { MAP_H, MAP_W, PATH_CELLS, SECTION_OF, cellIndex, isBuildable, PATH } from '../../../shared/map';
+import {
+  LANE_W, LANE_X, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, cellIndex, computeFlow, isBuildable, lanesOf, routeLength,
+  spawnsConnected, traceRoute,
+} from '../../../shared/map';
 import {
   TARGET_MODE_NAMES, type FullState, type LobbyPlayer, type PlayerStats, type ServerMsg, type Snapshot, type TargetMode, type TowerInfo,
 } from '../../../shared/protocol';
@@ -41,6 +44,10 @@ export class GameView {
   private clock = performance.now();
   private hostId: string | null = null;
   private paused: string | null = null;
+  /** Client-side copy of the tower grid and flow field for route previews and the "don't block" check. */
+  private blocked = new Uint8Array(MAP_W * MAP_H);
+  private routes: { x: number; y: number }[][] = [];
+  private blockCheck = { key: '', blocks: false };
 
   constructor(root: HTMLElement, private net: Net) {
     this.el = document.createElement('div');
@@ -66,11 +73,12 @@ export class GameView {
       <div class="build-panel panel">
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
+        <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung (F)</button>
         <div class="muted h-spectator hidden" style="margin-top:6px">Du bist Zuschauer.</div>
       </div>
       <div class="sel-panel panel hidden"></div>
-      <div class="minimap panel"><canvas width="230" height="224"></canvas></div>
+      <div class="minimap panel"><canvas width="230" height="202"></canvas></div>
       <div class="chat"><div class="lines"></div><input class="hidden" maxlength="200" placeholder="Nachricht an alle…"></div>
       <div class="banner"></div>
       <div class="toast"></div>
@@ -150,6 +158,7 @@ export class GameView {
     this.ent.clear();
     for (const t of state.towers) this.ent.setTower(t);
     for (const [id, x, y] of state.mines) this.ent.addMine(id, x, y);
+    this.refreshRoutes();
     const colors = new Map([...this.players.values()].map((p) => [p.id, p.color]));
     this.world.paintMap(this.sectionOwners, colors, this.you);
     this.minimapBg = null;
@@ -187,11 +196,13 @@ export class GameView {
         const prev = this.ent.towers.get(msg.tower.id);
         if (msg.tower.owner === this.you) sfx.play(prev ? (prev.info.level !== msg.tower.level ? 'upgrade' : 'click') : 'build');
         this.ent.setTower(msg.tower);
+        if (!prev) this.refreshRoutes();
         if (this.selected?.kind === 'tower' && this.selected.id === msg.tower.id) this.renderSelection();
         break;
       }
       case 'towerGone':
         this.ent.removeTower(msg.id);
+        this.refreshRoutes();
         if (this.selected?.kind === 'tower' && this.selected.id === msg.id) this.select(null);
         break;
       case 'chat': this.chatLine(msg.from ? `<b style="color:${hex(msg.color)}">${esc(msg.name)}:</b> ${esc(msg.text)}` : `<span class="gold">${esc(msg.text)}</span>`); break;
@@ -379,11 +390,12 @@ export class GameView {
       const owner = this.players.get(info.owner);
       const eff = effectiveStats(info.def, info.level, owner?.research ?? {}, auraBuffs(info, [...this.ent.towers.values()].map((x) => x.info)));
       const mine = info.owner === this.you && !this.over;
-      const next = info.level < 2 ? def.levels[info.level + 1] : null;
+      const maxLevel = def.maxLevel ?? 2;
+      const next = info.level < maxLevel ? def.levels[info.level + 1] : null;
       panel.innerHTML = `
         <div class="portrait" style="border-color:${hex(owner?.color ?? 0xffffff)}">${TOWER_ICONS[def.shape]}</div>
         <div class="info">
-          <h3>${esc(def.levelNames[info.level])} <span class="gold">${'★'.repeat(info.level + 1)}</span><span class="muted">${'☆'.repeat(2 - info.level)}</span> <small class="muted">Stufe ${info.level + 1}/3</small></h3>
+          <h3>${esc(def.levelNames[info.level])} <span class="gold">${'★'.repeat(info.level + 1)}</span><span class="muted">${'☆'.repeat(maxLevel - info.level)}</span> <small class="muted">Stufe ${info.level + 1}/${maxLevel + 1}</small></h3>
           <div class="muted" style="margin-bottom:4px"><span class="dot" style="background:${hex(owner?.color ?? 0xffffff)}"></span>${esc(owner?.name ?? '?')} · Kills: ${info.kills} · Schaden: ${fmt(info.damage)}</div>
           <div class="stats">${statLines(eff, def.levels[info.level]).map(([k, v]) => `<div><span class="muted">${k}:</span> ${v}</div>`).join('')}</div>
           ${mine ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).filter(() => eff.dmg > 0).map((m) => `<button data-mode="${m}" class="${info.mode === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}
@@ -548,7 +560,7 @@ export class GameView {
       const def = this.buildDef;
       const occupied = [...this.ent.towers.values()].some((t) => t.info.cx === h.cx && t.info.cy === h.cy);
       const own = isBuildable(h.cx, h.cy) && this.sectionOwners[SECTION_OF[cellIndex(h.cx, h.cy)]] === this.you;
-      const ok = own && !occupied && this.me.gold >= def.cost && this.me.lumber >= def.lumber;
+      const ok = own && !occupied && this.me.gold >= def.cost && this.me.lumber >= def.lumber && !this.wouldBlock(h.cx, h.cy);
       w.hoverMesh.visible = h.cx >= 0 && h.cy >= 0 && h.cx < MAP_W && h.cy < MAP_H;
       toWorld(h.cx + 0.5, h.cy + 0.5, 0.06, w.hoverMesh.position);
       (w.hoverMesh.material as any).color.setHex(ok ? 0x40ff40 : 0xff4040);
@@ -566,8 +578,41 @@ export class GameView {
     this.sectionOwners.forEach((o, i) => { if (o === this.you) mine.push(i); });
     const sections = mine.length ? mine : [0];
     const s = sections[this.sectionCycle++ % sections.length];
-    const p = PATH.posAt(((s + 0.5) / this.sectionOwners.length || 0.5) * PATH.total);
-    this.world.focus(p.x, p.y);
+    this.world.focus(LANE_X[s % 4] + LANE_W / 2, 3 + Math.floor(s / 4) * 10 + 5);
+  }
+
+  /** Recomputes the creep routes from the current towers (shown as dashed lines, like the Wintermaul maze preview). */
+  private refreshRoutes() {
+    this.blocked.fill(0);
+    for (const t of this.ent.towers.values()) this.blocked[cellIndex(t.info.cx, t.info.cy)] = 1;
+    const flow = computeFlow(this.blocked);
+    this.routes = lanesOf(this.sectionOwners).map((l) => traceRoute(flow, this.blocked, SPAWNS[l].x, SPAWNS[l].y));
+    this.world.setRoutes(this.routes);
+    this.blockCheck.key = '';
+    this.renderMazeInfo();
+  }
+
+  /** True if a tower at (cx, cy) would cut every route (the server rejects that, too). */
+  private wouldBlock(cx: number, cy: number): boolean {
+    const key = `${cx},${cy}`;
+    if (this.blockCheck.key === key) return this.blockCheck.blocks;
+    let blocks = false;
+    if (cx >= 0 && cy >= 0 && cx < MAP_W && cy < MAP_H && WALKABLE[cellIndex(cx, cy)] && !this.blocked[cellIndex(cx, cy)]) {
+      this.blocked[cellIndex(cx, cy)] = 1;
+      blocks = !spawnsConnected(computeFlow(this.blocked));
+      this.blocked[cellIndex(cx, cy)] = 0;
+    }
+    this.blockCheck = { key, blocks };
+    return blocks;
+  }
+
+  /** Length of the creep route through the lanes the player builds in. */
+  private renderMazeInfo() {
+    const lanes = lanesOf(this.sectionOwners);
+    const mine = new Set<number>();
+    this.sectionOwners.forEach((o, s) => { if (o === this.you) mine.add(s % 4); });
+    const parts = lanes.map((l, i) => `<span class="${mine.has(l) ? 'gold' : 'muted'}">${Math.round(routeLength(this.routes[i] ?? []))}</span>`);
+    this.q('.h-maze').innerHTML = `🧭 Weglänge: ${parts.join(' · ')}`;
   }
 
   private minimapClick(e: MouseEvent) {
@@ -680,12 +725,14 @@ export class GameView {
       const bg = document.createElement('canvas');
       bg.width = c.width; bg.height = c.height;
       const b = bg.getContext('2d')!;
-      b.fillStyle = '#2f4a22';
+      b.fillStyle = '#e8eef5';
       b.fillRect(0, 0, bg.width, bg.height);
       for (let y = 0; y < MAP_H; y++) {
         for (let x = 0; x < MAP_W; x++) {
           const i = cellIndex(x, y);
-          if (PATH_CELLS[i]) { b.fillStyle = '#8a6a44'; b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5); continue; }
+          b.fillStyle = WALKABLE[i] ? '#dfe7ef' : '#6f86a0';
+          b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
+          if (!WALKABLE[i]) continue;
           const s = SECTION_OF[i];
           if (s >= 0 && this.sectionOwners.length) {
             const col = this.players.get(this.sectionOwners[s])?.color ?? 0xffffff;
@@ -702,10 +749,17 @@ export class GameView {
       ctx.fillRect(t.info.cx * sx + 1, t.info.cy * sy + 1, sx - 2, sy - 2);
     }
     for (const e of this.ent.enemies.values()) {
-      const p = PATH.posAt(e.renderD);
+      const p = { x: e.rx, y: e.ry };
       ctx.fillStyle = e.def.boss ? '#ff40ff' : e.def.flying ? '#60c0ff' : '#ff3030';
       const r = e.def.boss ? 4 : 2;
       ctx.fillRect(p.x * sx - r / 2, p.y * sy - r / 2, r, r);
+    }
+    ctx.strokeStyle = 'rgba(230,60,40,0.8)';
+    ctx.lineWidth = 1;
+    for (const r of this.routes) {
+      ctx.beginPath();
+      r.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy)));
+      ctx.stroke();
     }
     this.pings = this.pings.filter((p) => p.until > now);
     for (const p of this.pings) {

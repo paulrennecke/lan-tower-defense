@@ -3,7 +3,10 @@ import { armorMultiplier, computeDamage, DAMAGE_TABLE } from '../shared/damage';
 import { CLASSES, TOWER_BY_ID, RESEARCH_BY_ID } from '../shared/data/classes';
 import { ENEMY_BY_ID, ENEMIES } from '../shared/data/enemies';
 import { getWave, playerHpMul, VICTORY_WAVE, waveBaseHp } from '../shared/data/waves';
-import { assignSections, MAP_H, MAP_W, PATH, PATH_CELLS, SECTION_COUNT, SECTION_OF, cellIndex } from '../shared/map';
+import {
+  assignSections, computeFlow, lanesOf, MAP_H, MAP_W, routeLength, SECTION_COUNT, SECTION_OF, SPAWNS, WALKABLE, cellIndex,
+  spawnsConnected, traceRoute,
+} from '../shared/map';
 import { auraBuffs, effectiveStats } from '../shared/stats';
 
 describe('damage', () => {
@@ -27,10 +30,12 @@ describe('damage', () => {
 });
 
 describe('content', () => {
-  it('has 6 classes with 6 towers and 4 research items each', () => {
+  it('has 6 classes with a maze block, 6 towers and 4 research items each', () => {
     expect(CLASSES).toHaveLength(6);
     for (const c of CLASSES) {
-      expect(c.towers).toHaveLength(6);
+      expect(c.towers).toHaveLength(7);
+      expect(c.towers[0].shape).toBe('block');
+      expect(c.towers[0].maxLevel).toBe(0);
       expect(c.research).toHaveLength(4);
       for (const t of c.towers) {
         expect(t.levels).toHaveLength(3);
@@ -67,24 +72,36 @@ describe('content', () => {
 });
 
 describe('map', () => {
-  it('path runs through the map and sections cover all 16 slots', () => {
-    expect(PATH.total).toBeGreaterThan(200);
+  it('has four lanes with 16 build zones of equal size', () => {
     const counts = new Array(SECTION_COUNT).fill(0);
     for (let i = 0; i < MAP_W * MAP_H; i++) if (SECTION_OF[i] >= 0) counts[SECTION_OF[i]]++;
-    for (const c of counts) expect(c).toBeGreaterThan(20);
+    for (const c of counts) expect(c).toBe(130);
+    for (let i = 0; i < MAP_W * MAP_H; i++) if (SECTION_OF[i] >= 0) expect(WALKABLE[i]).toBe(1);
   });
 
-  it('path cells are not buildable', () => {
-    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) {
-      if (PATH_CELLS[cellIndex(x, y)]) expect(SECTION_OF[cellIndex(x, y)]).toBe(-1);
-    }
+  it('creeps find a route from every spawn and towers lengthen it', () => {
+    const blocked = new Uint8Array(MAP_W * MAP_H);
+    const flow = computeFlow(blocked);
+    expect(spawnsConnected(flow)).toBe(true);
+    const before = routeLength(traceRoute(flow, blocked, SPAWNS[0].x, SPAWNS[0].y));
+    // A wall across lane 0 with a gap on the left (away from the exit) forces a detour.
+    for (let x = 3; x < 15; x++) blocked[cellIndex(x, 10)] = 1;
+    const flow2 = computeFlow(blocked);
+    expect(routeLength(traceRoute(flow2, blocked, SPAWNS[0].x, SPAWNS[0].y))).toBeGreaterThan(before);
+    // Closing the gap blocks the lane completely.
+    blocked[cellIndex(2, 10)] = 1;
+    expect(spawnsConnected(computeFlow(blocked))).toBe(false);
   });
 
-  it('assigns sections round-robin', () => {
-    expect(assignSections(['a'])).toEqual(new Array(16).fill('a'));
-    const s = assignSections(['a', 'b', 'c']);
-    expect(s.filter((x) => x === 'a')).toHaveLength(6);
-    expect(s.filter((x) => x === 'c')).toHaveLength(5);
+  it('assigns one lane per player up to four players', () => {
+    expect(lanesOf(assignSections(['a']))).toEqual([1]);
+    expect(assignSections(['a']).filter((x) => x === 'a')).toHaveLength(4);
+    const two = assignSections(['a', 'b']);
+    expect(lanesOf(two)).toEqual([1, 2]);
+    expect(two.every((o, s) => !o || o === (s % 4 === 1 ? 'a' : 'b'))).toBe(true);
+    expect(lanesOf(assignSections(['a', 'b', 'c', 'd', 'e']))).toEqual([0, 1, 2, 3]);
+    const sixteen = assignSections(Array.from({ length: 16 }, (_, i) => 'p' + i));
+    expect(new Set(sixteen).size).toBe(16);
   });
 });
 

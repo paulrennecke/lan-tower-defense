@@ -6,7 +6,10 @@ import {
   FIRST_COUNTDOWN, START_GOLD, START_LIVES, START_LUMBER, VICTORY_WAVE, WAVE_COUNTDOWN,
   getWave, playerHpMul, waveBaseHp, waveBounty, waveIncome, waveLumber,
 } from '../shared/data/waves';
-import { PATH, assignSections, cellIndex, isBuildable, SECTION_OF } from '../shared/map';
+import {
+  EXIT, GATE, MAP_H, MAP_W, SPAWNS, WALKABLE, assignSections, cellIndex, computeFlow, isBuildable, lanesOf, nextCell,
+  SECTION_OF, spawnsConnected, zoneOf,
+} from '../shared/map';
 import {
   EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN,
   type EnemySnap, type FullState, type Fx, type PlayerStats, type Snapshot, type TargetMode, type TowerInfo,
@@ -32,7 +35,7 @@ interface Tower extends TowerInfo {
   y: number;
   cdLeft: number;
   stats: TowerStats;
-  minePoints?: number[];
+  minePoints?: number[]; // cell indices
 }
 
 interface Dot { dps: number; until: number; owner: string; towerId: number }
@@ -42,7 +45,10 @@ export interface Enemy {
   typeIdx: number;
   def: EnemyDef;
   wave: number;
-  d: number;
+  /** Lane (0..3) the enemy spawned in. */
+  lane: number;
+  /** Remaining distance to the exit (cells). Smaller = further ahead. */
+  rem: number;
   x: number;
   y: number;
   hp: number;
@@ -81,7 +87,7 @@ export interface GameHooks {
 
 export const SELL_REFUND = 0.75;
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 
 export interface GameSave {
   version: number;
@@ -99,7 +105,7 @@ export interface GameSave {
   enemies: Omit<Enemy, 'def'>[];
   projectiles: Proj[];
   mines: Mine[];
-  spawnQueue: { at: number; enemy: string; hpMul: number; wave: number }[];
+  spawnQueue: { at: number; enemy: string; hpMul: number; wave: number; lane: number }[];
 }
 
 export class Game {
@@ -120,7 +126,11 @@ export class Game {
   private projectiles: Proj[] = [];
   readonly mines = new Map<number, Mine>();
   private occupancy = new Map<number, number>();
-  private spawnQueue: { at: number; enemy: string; hpMul: number; wave: number }[] = [];
+  /** 1 = cell is occupied by a tower (blocks creeps). */
+  readonly blocked = new Uint8Array(MAP_W * MAP_H);
+  /** Distance to the exit for every cell (flow field for ground creeps). */
+  flow: Float32Array = computeFlow(this.blocked);
+  private spawnQueue: { at: number; enemy: string; hpMul: number; wave: number; lane: number }[] = [];
   private fx: Fx[] = [];
   private nextId = 1;
   private hpMul: number;
@@ -134,7 +144,20 @@ export class Game {
       });
     }
     this.sectionOwners = assignSections(players.map((p) => p.id));
-    this.hpMul = playerHpMul(players.length);
+    // Each lane gets the full wave; HP scales with the number of players defending a lane.
+    // All lanes leak into the shared lives, so more lanes get a little slack.
+    const lanes = this.lanes.length;
+    this.hpMul = (playerHpMul(players.length) / lanes) * Math.pow(0.93, lanes - 1);
+    this.lives = START_LIVES + 10 * (lanes - 1);
+  }
+
+  /** Lanes that receive creeps. */
+  get lanes() { return lanesOf(this.sectionOwners); }
+
+  /** Players owning at least one zone in the lane. */
+  laneDefenders(lane: number): GamePlayer[] {
+    const ids = new Set(this.sectionOwners.filter((o, s) => o && s % 4 === lane));
+    return [...ids].map((id) => this.players.get(id)!).filter(Boolean);
   }
 
   // ------------------------------------------------------------------ commands
@@ -144,6 +167,19 @@ export class Game {
     if (this.sectionOwners[SECTION_OF[cellIndex(cx, cy)]] !== pid) return 'Das ist nicht dein Bauabschnitt.';
     if (this.occupancy.has(cellIndex(cx, cy))) return 'Feld ist belegt.';
     return null;
+  }
+
+  /** Flow field with an extra tower at (cx, cy), or an error if that would trap creeps. */
+  private flowWith(cx: number, cy: number): Float32Array | string {
+    for (const e of this.enemies) {
+      if (!e.dead && !e.def.flying && Math.abs(e.x - (cx + 0.5)) < 0.95 && Math.abs(e.y - (cy + 0.5)) < 0.95) return 'Ein Gegner steht im Weg.';
+    }
+    const i = cellIndex(cx, cy);
+    this.blocked[i] = 1;
+    const flow = computeFlow(this.blocked);
+    this.blocked[i] = 0;
+    const trapped = !spawnsConnected(flow) || this.enemies.some((e) => !e.dead && !e.def.flying && !Number.isFinite(flow[cellIndex(Math.floor(e.x), Math.floor(e.y))]));
+    return trapped ? 'Das würde den Weg blockieren! Die Gegner brauchen immer einen Durchgang.' : flow;
   }
 
   build(pid: string, defId: string, cx: number, cy: number): string | null {
@@ -156,6 +192,8 @@ export class Game {
     if (err) return err;
     if (p.gold < def.cost) return 'Nicht genug Gold.';
     if (p.lumber < def.lumber) return 'Nicht genug Holz.';
+    const flow = this.flowWith(cx, cy);
+    if (typeof flow === 'string') return flow;
     p.gold -= def.cost;
     p.lumber -= def.lumber;
     const t: Tower = {
@@ -164,6 +202,8 @@ export class Game {
     };
     this.towers.set(t.id, t);
     this.occupancy.set(cellIndex(cx, cy), t.id);
+    this.blocked[cellIndex(cx, cy)] = 1;
+    this.flow = flow;
     this.towersDirty = true;
     this.hooks.tower?.(this.towerInfo(t));
     return null;
@@ -173,7 +213,7 @@ export class Game {
     const p = this.players.get(pid);
     const t = this.towers.get(id);
     if (!p || !t || t.owner !== pid || this.over) return 'Ungültig.';
-    if (t.level >= 2) return 'Maximale Stufe erreicht.';
+    if (t.level >= (TOWER_BY_ID[t.def].maxLevel ?? 2)) return 'Maximale Stufe erreicht.';
     const def = TOWER_BY_ID[t.def];
     const cost = def.upCost[t.level], lumber = def.upLumber[t.level];
     if (p.gold < cost) return 'Nicht genug Gold.';
@@ -194,6 +234,8 @@ export class Game {
     p.gold += Math.floor(t.invested * SELL_REFUND);
     this.towers.delete(id);
     this.occupancy.delete(cellIndex(t.cx, t.cy));
+    this.blocked[cellIndex(t.cx, t.cy)] = 0;
+    this.flow = computeFlow(this.blocked);
     for (const m of [...this.mines.values()]) if (m.towerId === id) this.removeMine(m.id);
     this.towersDirty = true;
     this.hooks.towerGone?.(id);
@@ -256,7 +298,7 @@ export class Game {
     if (this.spawnQueue.length > 0) {
       while (this.spawnQueue.length && this.spawnQueue[0].at <= this.time) {
         const s = this.spawnQueue.shift()!;
-        this.spawnEnemy(s.enemy, s.wave, s.hpMul, 0);
+        this.spawnEnemy(s.enemy, s.wave, s.hpMul, s.lane);
       }
       if (this.spawnQueue.length === 0) this.timer = WAVE_COUNTDOWN;
       return;
@@ -272,9 +314,13 @@ export class Game {
     const n = this.wave;
     const def = getWave(n);
     const entries: typeof this.spawnQueue = [];
+    const lanes = this.lanes;
     for (const grp of def.groups) {
-      for (let i = 0; i < grp.count; i++) {
-        entries.push({ at: this.time + (grp.delay ?? 0) + i * grp.interval, enemy: grp.enemy, hpMul: grp.hpMul ?? 1, wave: n });
+      // Every active lane spawns the whole wave (like the per-player spawns in Wintermaul).
+      for (const lane of lanes) {
+        for (let i = 0; i < grp.count; i++) {
+          entries.push({ at: this.time + (grp.delay ?? 0) + i * grp.interval, enemy: grp.enemy, hpMul: grp.hpMul ?? 1, wave: n, lane });
+        }
       }
     }
     entries.sort((a, b) => a.at - b.at);
@@ -299,19 +345,49 @@ export class Game {
     return bonus;
   }
 
-  spawnEnemy(enemyId: string, wave: number, hpMul: number, d: number): Enemy {
+  spawnEnemy(enemyId: string, wave: number, hpMul: number, lane: number, pos?: { x: number; y: number }): Enemy {
     const def = ENEMY_BY_ID[enemyId];
     const hp = Math.max(1, Math.round(waveBaseHp(wave) * def.hp * hpMul * this.hpMul));
-    const pos = PATH.posAt(d);
+    const start = pos ?? { x: SPAWNS[lane].x + (Math.random() - 0.5) * 2, y: SPAWNS[lane].y };
     const e: Enemy = {
-      id: this.nextId++, typeIdx: ENEMY_INDEX[enemyId], def, wave, d, x: pos.x, y: pos.y,
+      id: this.nextId++, typeIdx: ENEMY_INDEX[enemyId], def, wave, lane, rem: 0, x: start.x, y: start.y,
       hp, maxHp: hp, bounty: Math.max(1, Math.round(waveBounty(wave) * def.bounty)),
       slow: 0, slowUntil: 0, stunUntil: 0, armorRed: 0, armorRedUntil: 0, dots: [],
       healCd: def.heal?.cd ?? 0, revealed: false, dead: false,
     };
+    e.rem = this.remaining(e);
     this.enemies.push(e);
     this.enemyById.set(e.id, e);
     return e;
+  }
+
+  private remaining(e: Enemy): number {
+    if (e.def.flying) return Math.hypot(GATE.x - e.x, GATE.y - e.y);
+    const d = this.flow[cellIndex(Math.floor(e.x), Math.floor(e.y))];
+    return Number.isFinite(d) ? d : Math.hypot(GATE.x - e.x, GATE.y - e.y) + 100;
+  }
+
+  /** Moves a creep: flyers straight to the gate, ground creeps along the flow field around the towers. */
+  private move(e: Enemy, step: number): boolean {
+    if (e.def.flying) {
+      const dx = GATE.x - e.x, dy = GATE.y - e.y, dd = Math.hypot(dx, dy);
+      if (dd <= step + 0.3) return true;
+      e.x += (dx / dd) * step;
+      e.y += (dy / dd) * step;
+      return false;
+    }
+    let left = step;
+    for (let k = 0; k < 4 && left > 1e-6; k++) {
+      const cx = Math.floor(e.x), cy = Math.floor(e.y);
+      if (EXIT[cellIndex(cx, cy)]) return true;
+      const j = nextCell(this.flow, this.blocked, cx, cy);
+      // Off the flow field (should not happen): head for the cell centre, then the gate.
+      const tx = j >= 0 ? (j % MAP_W) + 0.5 : WALKABLE[cellIndex(cx, cy)] ? GATE.x : cx + 0.5;
+      const ty = j >= 0 ? Math.floor(j / MAP_W) + 0.5 : WALKABLE[cellIndex(cx, cy)] ? GATE.y : cy + 0.5;
+      const dx = tx - e.x, dy = ty - e.y, dd = Math.hypot(dx, dy);
+      if (dd <= left) { e.x = tx; e.y = ty; left -= dd; if (dd < 1e-6) break; } else { e.x += (dx / dd) * left; e.y += (dy / dd) * left; left = 0; }
+    }
+    return EXIT[cellIndex(Math.floor(e.x), Math.floor(e.y))] === 1;
   }
 
   private updateEnemies(dt: number) {
@@ -341,14 +417,11 @@ export class Game {
       }
       if (e.stunUntil > now) continue;
       const slow = e.slowUntil > now ? e.slow : 0;
-      e.d += e.def.speed * (1 - slow) * dt;
-      if (e.d >= PATH.total) {
+      if (this.move(e, e.def.speed * (1 - slow) * dt)) {
         this.leak(e);
         continue;
       }
-      const pos = PATH.posAt(e.d);
-      e.x = pos.x;
-      e.y = pos.y;
+      e.rem = this.remaining(e);
     }
   }
 
@@ -358,8 +431,8 @@ export class Game {
     this.lives = Math.max(0, this.lives - e.def.lives);
     this.leaksByWave[e.wave] = (this.leaksByWave[e.wave] ?? 0) + e.def.lives;
     this.fx.push(['l', e.id]);
-    // The owner of the last section takes the blame on the scoreboard.
-    const last = this.players.get(this.sectionOwners[this.sectionOwners.length - 1]);
+    // The owner of the last zone of the creep's lane takes the blame on the scoreboard.
+    const last = this.players.get(this.sectionOwners[zoneOf(e.lane, 3)]);
     if (last) last.leaks++;
     if (this.lives <= 0 && !this.over) {
       this.over = true;
@@ -386,8 +459,8 @@ export class Game {
     const c = this.enemies.filter((e) => this.targetable(t, e));
     if (c.length === 0) return c;
     const key: Record<TargetMode, (e: Enemy) => number> = {
-      first: (e) => e.d,
-      last: (e) => -e.d,
+      first: (e) => -e.rem,
+      last: (e) => e.rem,
       strong: (e) => e.hp,
       weak: (e) => -e.hp,
       close: (e) => -Math.hypot(t.x - e.x, t.y - e.y),
@@ -411,8 +484,8 @@ export class Game {
         if (!t.minePoints?.length) continue;
         const count = [...this.mines.values()].filter((m) => m.towerId === t.id).length;
         if (count >= s.mine.max) continue;
-        const d = t.minePoints[Math.floor(Math.random() * t.minePoints.length)];
-        const pos = PATH.posAt(d);
+        const c = t.minePoints[Math.floor(Math.random() * t.minePoints.length)];
+        const pos = { x: (c % MAP_W) + 0.5, y: Math.floor(c / MAP_W) + 0.5 };
         const m: Mine = {
           id: this.nextId++, x: pos.x + (Math.random() - 0.5) * 0.6, y: pos.y + (Math.random() - 0.5) * 0.6,
           dmg: s.mine.dmg, radius: s.mine.radius, towerId: t.id, owner: t.owner,
@@ -535,20 +608,22 @@ export class Game {
     const killer = this.players.get(owner);
     const t = this.towers.get(towerId);
     if (t) t.kills++;
-    // Kill gold is shared: every player receives the bounty, the killer gets research bonuses on top.
-    for (const p of this.players.values()) p.gold += e.bounty;
+    // Kill gold goes to the defenders of the creep's lane; a helping killer from another lane gets it, too.
+    const defenders = this.laneDefenders(e.lane);
+    if (killer && !defenders.includes(killer)) defenders.push(killer);
+    for (const p of defenders) p.gold += e.bounty;
     if (killer) {
       killer.kills++;
       for (const [rid, lvl] of Object.entries(killer.research)) killer.gold += (RESEARCH_BY_ID[rid]?.perLevel.bounty ?? 0) * lvl;
     }
     if (e.def.boss) {
-      for (const p of this.players.values()) p.lumber += 2;
-      this.hooks.event?.('info', `${e.def.name} wurde besiegt! +2 Holz für alle.`);
+      for (const p of this.laneDefenders(e.lane)) p.lumber += 2;
+      this.hooks.event?.('info', `${e.def.name} wurde besiegt! +2 Holz für ${this.laneDefenders(e.lane).map((p) => p.name).join(', ')}.`);
     }
     this.fx.push(['k', Math.round(e.x * 10) / 10, Math.round(e.y * 10) / 10, e.bounty]);
     if (e.def.split) {
       for (let i = 0; i < e.def.split.count; i++) {
-        const child = this.spawnEnemy(e.def.split.into, e.wave, 1, Math.max(0, e.d - 0.3 - i * 0.4));
+        const child = this.spawnEnemy(e.def.split.into, e.wave, 1, e.lane, { x: e.x + (Math.random() - 0.5) * 0.6, y: e.y + (Math.random() - 0.5) * 0.6 });
         child.revealed = e.revealed;
       }
     }
@@ -589,9 +664,14 @@ export class Game {
       t.stats = this.effectiveStats(t);
       if (t.stats.mine) {
         t.minePoints = [];
-        for (let d = 0; d < PATH.total; d += 0.5) {
-          const pos = PATH.posAt(d);
-          if (Math.hypot(pos.x - t.x, pos.y - t.y) <= t.stats.range) t.minePoints.push(d);
+        const r = Math.ceil(t.stats.range);
+        for (let y = Math.floor(t.y) - r; y <= Math.floor(t.y) + r; y++) {
+          for (let x = Math.floor(t.x) - r; x <= Math.floor(t.x) + r; x++) {
+            if (x < 0 || y < 0 || x >= MAP_W || y >= MAP_H) continue;
+            const c = cellIndex(x, y);
+            if (!WALKABLE[c] || this.blocked[c] || !Number.isFinite(this.flow[c])) continue;
+            if (Math.hypot(x + 0.5 - t.x, y + 0.5 - t.y) <= t.stats.range) t.minePoints.push(c);
+          }
         }
       }
     }
@@ -623,7 +703,7 @@ export class Game {
       if (e.def.invisible) flags |= EF_INVIS;
       if (e.revealed) flags |= EF_REVEALED;
       if (e.armorRedUntil > now) flags |= EF_ARMORRED;
-      return [e.id, e.typeIdx, Math.round(e.d * 100) / 100, Math.ceil(e.hp), e.maxHp, flags];
+      return [e.id, e.typeIdx, Math.round(e.x * 100) / 100, Math.round(e.y * 100) / 100, Math.ceil(e.hp), e.maxHp, flags];
     });
     const fx = this.fx;
     this.fx = [];
@@ -696,7 +776,9 @@ export class Game {
       const tower: Tower = { ...t, x: t.cx + 0.5, y: t.cy + 0.5, stats: TOWER_BY_ID[t.def].levels[t.level] };
       g.towers.set(t.id, tower);
       g.occupancy.set(cellIndex(t.cx, t.cy), t.id);
+      g.blocked[cellIndex(t.cx, t.cy)] = 1;
     }
+    g.flow = computeFlow(g.blocked);
     for (const e of s.enemies) {
       const def = ENEMIES[e.typeIdx];
       if (!def) continue;

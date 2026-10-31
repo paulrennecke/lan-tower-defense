@@ -8,7 +8,7 @@ export const TOWER_ICONS: Record<TowerShape, string> = {
   ziggurat: '💀', plague: '☣️', frost: '❄️', wagon: '🛒', obelisk: '🗿', throne: '👑',
   ancient: '🌳', moonwell: '🌙', vines: '🌿', dryad: '🍃', nest: '🪶', worldtree: '🌲',
   fire: '🔥', water: '💧', earth: '⛰️', air: '🌪️', magma: '🌋', vortex: '🌀',
-  gun: '🔫', rocket: '🚀', tesla: '🔌', mines: '💥', bank: '💰', zeppelin: '🎈',
+  gun: '🔫', rocket: '🚀', tesla: '🔌', mines: '💥', bank: '💰', zeppelin: '🎈', block: '🧱',
 };
 
 export const CLASS_ICONS: Record<string, string> = {

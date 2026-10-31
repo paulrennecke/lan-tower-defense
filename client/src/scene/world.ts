@@ -1,8 +1,10 @@
 import * as THREE from 'three';
-import { CELL_SIZE, MAP_H, MAP_W, PATH, PATH_CELLS, SECTION_OF, BASE_CELL, SPAWN_CELL, cellIndex, isBuildable } from '../../../shared/map';
-import { createBase, createPortal, createRock, createTree, mergeWorldObjects } from './models';
+import { CELL_SIZE, GATE, LANES, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, cellIndex, isBuildable, lanesOf } from '../../../shared/map';
+import { createBase, createIceCliff, createPortal, createRock, createTree, mergeWorldObjects } from './models';
 
 export const PITCH = THREE.MathUtils.degToRad(56);
+
+const ROUTE_MAT = new THREE.LineDashedMaterial({ color: 0xff5040, dashSize: 0.8, gapSize: 0.6, transparent: true, opacity: 0.75, depthWrite: false });
 
 /** Converts logic coordinates (cells) to world position. */
 export function toWorld(x: number, y: number, h = 0, out = new THREE.Vector3()): THREE.Vector3 {
@@ -33,6 +35,8 @@ export class World {
   private mapCanvas = document.createElement('canvas');
   private mapTexture: THREE.CanvasTexture;
   private animated: THREE.Object3D[] = [];
+  private routeLines: THREE.Line[] = [];
+  private snow!: THREE.Points;
   readonly hoverMesh: THREE.Mesh;
   readonly rangeRing: THREE.Mesh;
   readonly auraRing: THREE.Mesh;
@@ -51,23 +55,23 @@ export class World {
     container.appendChild(this.renderer.domElement);
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.5, 600);
 
-    this.scene.background = new THREE.Color(0x1a2a3a);
-    this.scene.fog = new THREE.Fog(0x1a2a3a, 120, 260);
+    this.scene.background = new THREE.Color(0x8fa6bd);
+    this.scene.fog = new THREE.Fog(0x8fa6bd, 160, 340);
 
-    const hemi = new THREE.HemisphereLight(0xcfe4ff, 0x3a4a2a, 1.4);
+    const hemi = new THREE.HemisphereLight(0xdcecff, 0x6a7a8a, 1.3);
     this.scene.add(hemi);
-    const sun = new THREE.DirectionalLight(0xfff0d0, 2.4);
+    const sun = new THREE.DirectionalLight(0xfff4e6, 2.0);
     sun.position.set(-40, 80, 30);
     sun.castShadow = true;
     sun.shadow.mapSize.set(4096, 4096);
     const sc = sun.shadow.camera;
-    sc.left = -60; sc.right = 60; sc.top = 60; sc.bottom = -60; sc.near = 10; sc.far = 220;
+    sc.left = -75; sc.right = 75; sc.top = 70; sc.bottom = -70; sc.near = 10; sc.far = 220;
     sun.shadow.bias = -0.0005;
     sun.shadow.normalBias = 0.03;
     this.scene.add(sun);
 
-    this.mapCanvas.width = MAP_W * 32;
-    this.mapCanvas.height = MAP_H * 32;
+    this.mapCanvas.width = MAP_W * 24;
+    this.mapCanvas.height = MAP_H * 24;
     this.mapTexture = new THREE.CanvasTexture(this.mapCanvas);
     this.mapTexture.colorSpace = THREE.SRGBColorSpace;
     this.mapTexture.anisotropy = 8;
@@ -120,10 +124,11 @@ export class World {
     const outerCanvas = document.createElement('canvas');
     outerCanvas.width = outerCanvas.height = 256;
     const octx = outerCanvas.getContext('2d')!;
-    octx.fillStyle = '#3d5a2a';
+    octx.fillStyle = '#dfe8f1';
     octx.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 3000; i++) {
-      octx.fillStyle = `rgba(${30 + rand() * 40},${60 + rand() * 50},${20 + rand() * 30},0.5)`;
+      const v = 200 + rand() * 50;
+      octx.fillStyle = `rgba(${v - 15},${v - 5},${v + 5},0.5)`;
       octx.fillRect(rand() * 256, rand() * 256, 2, 2);
     }
     const outerTex = new THREE.CanvasTexture(outerCanvas);
@@ -137,7 +142,7 @@ export class World {
     this.scene.add(outer);
 
     // Cliff border around the play field.
-    const borderMat = new THREE.MeshStandardMaterial({ color: 0x6a5f50, roughness: 1, flatShading: true });
+    const borderMat = new THREE.MeshStandardMaterial({ color: 0xa9c2d8, roughness: 0.6, flatShading: true });
     const W = MAP_W * CELL_SIZE, H = MAP_H * CELL_SIZE;
     for (const [w, d, x, z] of [[W + 2, 1, 0, -H / 2 - 0.5], [W + 2, 1, 0, H / 2 + 0.5], [1, H, -W / 2 - 0.5, 0], [1, H, W / 2 + 0.5, 0]] as const) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.6, d), borderMat);
@@ -162,97 +167,127 @@ export class World {
     }
     this.scene.add(mergeWorldObjects(deco));
 
-    const portal = createPortal();
-    toWorld(SPAWN_CELL[0] + 0.5, SPAWN_CELL[1] + 0.5, 0, portal.position);
-    portal.position.x -= 1;
-    this.scene.add(portal);
-    this.animated.push(portal);
-    const light = new THREE.PointLight(0xa040ff, 30, 14);
-    light.position.copy(portal.position).add(new THREE.Vector3(0, 2, 0));
-    this.scene.add(light);
-
-    const base = createBase();
-    toWorld(BASE_CELL[0] + 0.5, BASE_CELL[1] + 0.5, 0, base.position);
-    this.scene.add(base);
-  }
-
-  /** Paints grass, the path and the build sections of every player onto the map texture. */
-  paintMap(sectionOwners: string[], colors: Map<string, number>, you: string) {
-    const ctx = this.mapCanvas.getContext('2d')!;
-    const S = 32;
-    const rand = mulberry(42);
-    ctx.fillStyle = '#4f7a34';
-    ctx.fillRect(0, 0, this.mapCanvas.width, this.mapCanvas.height);
-    for (let i = 0; i < 26000; i++) {
-      const g = 90 + rand() * 60;
-      ctx.fillStyle = `rgba(${40 + rand() * 40},${g},${30 + rand() * 25},0.55)`;
-      ctx.fillRect(rand() * this.mapCanvas.width, rand() * this.mapCanvas.height, 2 + rand() * 2, 2 + rand() * 3);
-    }
-    // Section tint.
+    // Ice cliffs on every blocked cell inside the map.
+    const cliffs: THREE.Object3D[] = [];
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
-        const s = SECTION_OF[cellIndex(x, y)];
-        if (s < 0 || !sectionOwners.length) continue;
+        if (WALKABLE[cellIndex(x, y)]) continue;
+        const c = createIceCliff(rand);
+        toWorld(x + 0.5, y + 0.5, 0, c.position);
+        cliffs.push(c);
+      }
+    }
+    this.scene.add(mergeWorldObjects(cliffs));
+
+    // One spawn portal per lane at the top.
+    for (const sp of SPAWNS) {
+      const portal = createPortal();
+      toWorld(sp.x, sp.y - 0.6, 0, portal.position);
+      portal.rotation.y = Math.PI / 2;
+      this.scene.add(portal);
+      this.animated.push(portal);
+      const light = new THREE.PointLight(0x7fd0ff, 25, 14);
+      light.position.copy(portal.position).add(new THREE.Vector3(0, 2, 0));
+      this.scene.add(light);
+    }
+
+    // The gate the creeps try to reach.
+    const base = createBase();
+    toWorld(GATE.x, GATE.y + 1.2, 0, base.position);
+    base.scale.setScalar(1.4);
+    this.scene.add(base);
+
+    // Snowfall.
+    const flakes = 2500;
+    const pos = new Float32Array(flakes * 3);
+    for (let i = 0; i < flakes; i++) {
+      pos[i * 3] = (rand() - 0.5) * (W + 40);
+      pos[i * 3 + 1] = rand() * 60;
+      pos[i * 3 + 2] = (rand() - 0.5) * (H + 40);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.snow = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, transparent: true, opacity: 0.85, depthWrite: false }));
+    this.scene.add(this.snow);
+  }
+
+  private updateSnow(dt: number, t: number) {
+    const a = this.snow.geometry.attributes.position as THREE.BufferAttribute;
+    const p = a.array as Float32Array;
+    for (let i = 0; i < p.length; i += 3) {
+      p[i + 1] -= dt * (3 + (i % 7) * 0.3);
+      p[i] += Math.sin(t * 0.7 + i) * dt * 0.6;
+      if (p[i + 1] < 0) p[i + 1] += 60;
+    }
+    a.needsUpdate = true;
+  }
+
+  /** Shows the current creep routes (one polyline per lane). */
+  setRoutes(routes: { x: number; y: number }[][]) {
+    for (const l of this.routeLines) { this.scene.remove(l); l.geometry.dispose(); }
+    this.routeLines = [];
+    for (const r of routes) {
+      if (r.length < 2) continue;
+      const geo = new THREE.BufferGeometry().setFromPoints(r.map((p) => toWorld(p.x, p.y, 0.12)));
+      const line = new THREE.Line(geo, ROUTE_MAT);
+      line.computeLineDistances();
+      this.scene.add(line);
+      this.routeLines.push(line);
+    }
+  }
+
+  /** Paints snow, trodden lanes and the build zones of every player onto the map texture. */
+  paintMap(sectionOwners: string[], colors: Map<string, number>, you: string) {
+    const ctx = this.mapCanvas.getContext('2d')!;
+    const S = 24;
+    const rand = mulberry(42);
+    const active = sectionOwners.length ? lanesOf(sectionOwners) : [0, 1, 2, 3];
+    ctx.fillStyle = '#e4ecf4';
+    ctx.fillRect(0, 0, this.mapCanvas.width, this.mapCanvas.height);
+    for (let i = 0; i < 20000; i++) {
+      const v = 205 + rand() * 45;
+      ctx.fillStyle = `rgba(${v - 20},${v - 8},${v + 5},0.5)`;
+      ctx.fillRect(rand() * this.mapCanvas.width, rand() * this.mapCanvas.height, 2 + rand() * 3, 2 + rand() * 2);
+    }
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        const i = cellIndex(x, y);
+        if (!WALKABLE[i]) { ctx.fillStyle = 'rgba(120,150,180,0.55)'; ctx.fillRect(x * S, y * S, S, S); continue; }
+        const s = SECTION_OF[i];
+        if (s < 0) { ctx.fillStyle = 'rgba(150,165,185,0.28)'; ctx.fillRect(x * S, y * S, S, S); continue; }
         const owner = sectionOwners[s];
+        if (!active.includes(s % LANES) || (sectionOwners.length && !owner)) {
+          ctx.fillStyle = 'rgba(90,110,135,0.3)';
+          ctx.fillRect(x * S, y * S, S, S);
+          continue;
+        }
+        if (!owner) continue;
         const col = colors.get(owner) ?? 0xffffff;
-        const mine = owner === you;
-        ctx.fillStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${mine ? 0.22 : 0.08})`;
+        ctx.fillStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.2 : 0.08})`;
         ctx.fillRect(x * S, y * S, S, S);
       }
     }
     // Grid on buildable cells.
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.strokeStyle = 'rgba(40,60,90,0.12)';
     ctx.lineWidth = 1;
     for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (isBuildable(x, y)) ctx.strokeRect(x * S + 0.5, y * S + 0.5, S - 1, S - 1);
-    // Section borders.
-    if (sectionOwners.length) {
-      for (let y = 0; y < MAP_H; y++) {
-        for (let x = 0; x < MAP_W; x++) {
-          const s = SECTION_OF[cellIndex(x, y)];
-          if (s < 0) continue;
-          const owner = sectionOwners[s];
-          const col = colors.get(owner) ?? 0xffffff;
-          ctx.strokeStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.95 : 0.5})`;
-          ctx.lineWidth = owner === you ? 3 : 2;
-          const check = (nx: number, ny: number) => nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H && SECTION_OF[cellIndex(nx, ny)] >= 0 && sectionOwners[SECTION_OF[cellIndex(nx, ny)]] === owner;
-          ctx.beginPath();
-          if (!check(x, y - 1)) { ctx.moveTo(x * S, y * S + 1); ctx.lineTo(x * S + S, y * S + 1); }
-          if (!check(x, y + 1)) { ctx.moveTo(x * S, y * S + S - 1); ctx.lineTo(x * S + S, y * S + S - 1); }
-          if (!check(x - 1, y)) { ctx.moveTo(x * S + 1, y * S); ctx.lineTo(x * S + 1, y * S + S); }
-          if (!check(x + 1, y)) { ctx.moveTo(x * S + S - 1, y * S); ctx.lineTo(x * S + S - 1, y * S + S); }
-          ctx.stroke();
-        }
-      }
-    }
-    // Dirt path.
+    // Zone borders.
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
-        if (!PATH_CELLS[cellIndex(x, y)]) continue;
-        ctx.fillStyle = '#8a6a44';
-        ctx.fillRect(x * S - 2, y * S - 2, S + 4, S + 4);
+        const s = SECTION_OF[cellIndex(x, y)];
+        if (s < 0 || !sectionOwners[s]) continue;
+        const owner = sectionOwners[s];
+        const col = colors.get(owner) ?? 0xffffff;
+        ctx.strokeStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.95 : 0.5})`;
+        ctx.lineWidth = owner === you ? 3 : 2;
+        const same = (nx: number, ny: number) => nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H && SECTION_OF[cellIndex(nx, ny)] === s;
+        ctx.beginPath();
+        if (!same(x, y - 1)) { ctx.moveTo(x * S, y * S + 1); ctx.lineTo(x * S + S, y * S + 1); }
+        if (!same(x, y + 1)) { ctx.moveTo(x * S, y * S + S - 1); ctx.lineTo(x * S + S, y * S + S - 1); }
+        if (!same(x - 1, y)) { ctx.moveTo(x * S + 1, y * S); ctx.lineTo(x * S + 1, y * S + S); }
+        if (!same(x + 1, y)) { ctx.moveTo(x * S + S - 1, y * S); ctx.lineTo(x * S + S - 1, y * S + S); }
+        ctx.stroke();
       }
-    }
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        if (!PATH_CELLS[cellIndex(x, y)]) continue;
-        for (let i = 0; i < 40; i++) {
-          const v = 100 + rand() * 60;
-          ctx.fillStyle = `rgba(${v + 30},${v},${v * 0.6},0.6)`;
-          ctx.fillRect(x * S + rand() * S, y * S + rand() * S, 2 + rand() * 3, 2 + rand() * 3);
-        }
-      }
-    }
-    // Direction arrows along the path.
-    ctx.fillStyle = 'rgba(60,40,20,0.35)';
-    for (let d = 3; d < PATH.total; d += 6) {
-      const p = PATH.posAt(d);
-      ctx.save();
-      ctx.translate(p.x * S, p.y * S);
-      ctx.rotate(p.dir);
-      ctx.beginPath();
-      ctx.moveTo(8, 0); ctx.lineTo(-6, -7); ctx.lineTo(-6, 7); ctx.closePath();
-      ctx.fill();
-      ctx.restore();
     }
     this.mapTexture.needsUpdate = true;
   }
@@ -363,6 +398,7 @@ export class World {
   render(dt: number, t: number) {
     this.updateCamera(dt);
     for (const o of this.animated) o.userData.anim?.(t);
+    this.updateSnow(dt, t);
     this.renderer.render(this.scene, this.camera);
   }
 }
