@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import { CLASS_BY_ID } from '../shared/data/classes';
 import {
-  MAX_PLAYERS, PLAYER_COLORS, type ClientMsg, type GamePhase, type LobbyPlayer, type SaveInfo, type ServerMsg, type TargetMode,
+  DEFAULT_OPTIONS, MAX_PLAYERS, PLAYER_COLORS, type ClientMsg, type GameOptions, type GamePhase, type LobbyPlayer, type SaveInfo, type ServerMsg, type TargetMode,
 } from '../shared/protocol';
 import { Game, type GameHooks, type GamePlayer, type GameSave } from './game';
 import { setActiveMap } from '../shared/map';
@@ -27,6 +27,7 @@ const entries = new Map<string, Entry>();
 let hostId: string | null = null;
 let phase: GamePhase = 'lobby';
 let mapId = DEFAULT_MAP;
+let options: GameOptions = { ...DEFAULT_OPTIONS };
 let game: Game | null = null;
 let highscore = loadHighscore();
 
@@ -114,7 +115,7 @@ function lobbyMsg(): ServerMsg {
   const players: LobbyPlayer[] = [...entries.values()].map(({ id, name, color, classId, ready, connected, spectator }) => ({
     id, name, color, classId, ready, connected, spectator,
   }));
-  return { t: 'lobby', players, hostId, phase, highscore, saves, map: mapId };
+  return { t: 'lobby', players, hostId, phase, highscore, saves, map: mapId, options };
 }
 function broadcastLobby() { broadcast(lobbyMsg()); }
 
@@ -157,7 +158,7 @@ function gameHooks(): GameHooks {
 function startGame() {
   const players = activePlayers().filter((e) => e.connected);
   setActiveMap(mapId);
-  runGame(new Game(players.map((p) => ({ id: p.id, name: p.name, color: p.color, classId: p.classId! })), gameHooks()));
+  runGame(new Game(players.map((p) => ({ id: p.id, name: p.name, color: p.color, classId: p.classId! })), gameHooks(), options));
   sysChat(`Das Spiel beginnt mit ${players.length} Spieler(n)! Baut eure Verteidigung – die erste Welle kommt bald.`);
 }
 
@@ -173,6 +174,7 @@ function loadGame(id: string, host: Entry): string | null {
     return 'Spielstand konnte nicht geladen werden: ' + (e as Error).message;
   }
   mapId = g.mapId;
+  options = { ...g.options };
   // Connected players take over the saved slots: same name first, then in join order (host first).
   const free = [...g.players.values()];
   const lobby = activePlayers().filter((e) => e.connected).sort((a, b) => Number(b === host) - Number(a === host));
@@ -331,6 +333,12 @@ wss.on('connection', (ws) => {
       case 'setMap':
         if (phase === 'lobby' && p.id === hostId && MAP_BY_ID[msg.id]) { mapId = msg.id; broadcastLobby(); }
         break;
+      case 'setOptions': {
+        if (phase !== 'lobby' || p.id !== hostId || !msg.options) return;
+        for (const k of Object.keys(DEFAULT_OPTIONS) as (keyof GameOptions)[]) if (typeof msg.options[k] === 'boolean') options[k] = msg.options[k]!;
+        broadcastLobby();
+        break;
+      }
       case 'start': {
         if (phase !== 'lobby' || p.id !== hostId) return;
         const players = activePlayers().filter((e) => e.connected);

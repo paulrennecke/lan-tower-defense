@@ -52,6 +52,18 @@ describe('Game commands', () => {
     expect(g.build('p0', 'h_watch', other.cx, other.cy)).toMatch(/Gold/);
   });
 
+  it('free building: with ownZonesOnly off everyone may build in every zone', () => {
+    const g = new Game([{ id: 'p0', name: 'P0', color: 0, classId: 'human' }, { id: 'p1', name: 'P1', color: 0, classId: 'orc' }], {}, { ownZonesOnly: false });
+    const foreign = cellNear(g, 'p1', 10);
+    expect(g.build('p0', 'h_watch', foreign.cx, foreign.cy)).toBeNull();
+    // Unowned zones of inactive lanes are buildable, too.
+    expect(g.sectionOwners[0]).toBe('');
+    expect(g.build('p0', 'h_block', 5, 5)).toBeNull();
+    const strict = mkGame(['human', 'orc']);
+    expect(strict.build('p0', 'h_block', 5, 5)).toMatch(/Bauabschnitt/);
+    expect(Game.fromSave(JSON.parse(JSON.stringify(g.toSave()))).options.ownZonesOnly).toBe(false);
+  });
+
   it('upgrades and sells with refund', () => {
     const g = mkGame(['human']);
     const c = cellNear(g, 'p0', 10);

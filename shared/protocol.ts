@@ -10,6 +10,15 @@ export const PLAYER_COLORS = [
 
 export const MAX_PLAYERS = 16;
 
+/** Rules chosen by the host in the lobby. */
+export interface GameOptions {
+  /** Players may only build in their own zones (off = everyone may build in every zone). */
+  ownZonesOnly: boolean;
+  /** Show the creep route (dashed line, minimap, route length). */
+  showRoute: boolean;
+}
+export const DEFAULT_OPTIONS: GameOptions = { ownZonesOnly: true, showRoute: true };
+
 export type GamePhase = 'lobby' | 'playing' | 'gameover';
 
 export interface LobbyPlayer {
@@ -64,6 +73,7 @@ export type Fx =
 export interface FullState {
   you: string;
   map: string;
+  options: GameOptions;
   players: (LobbyPlayer & PlayerStats)[];
   sectionOwners: string[];
   towers: TowerInfo[];
@@ -103,6 +113,7 @@ export type ClientMsg =
   | { t: 'lobbyReady'; ready: boolean }
   | { t: 'start' }
   | { t: 'setMap'; id: string }
+  | { t: 'setOptions'; options: Partial<GameOptions> }
   | { t: 'chat'; text: string }
   | { t: 'build'; def: string; cx: number; cy: number }
   | { t: 'upgrade'; id: number }
@@ -119,7 +130,7 @@ export type ClientMsg =
 
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string }
-  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string }
+  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string; options: GameOptions }
   | { t: 'game'; state: FullState }
   | Snapshot
   | { t: 'tower'; tower: TowerInfo }

@@ -3,11 +3,11 @@ import { CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/cl
 import { ENEMY_BY_ID } from '../../../shared/data/enemies';
 import { VICTORY_WAVE, getWave } from '../../../shared/data/waves';
 import {
-  MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, ZONE_CENTER, cellIndex, setActiveMap, computeFlow, isBuildable, lanesOf, routeLength,
+  MAP_DEF, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, ZONE_CENTER, cellIndex, setActiveMap, computeFlow, isBuildable, lanesOf, routeLength,
   spawnsConnected, traceRoute,
 } from '../../../shared/map';
 import {
-  TARGET_MODE_NAMES, type FullState, type LobbyPlayer, type PlayerStats, type ServerMsg, type Snapshot, type TargetMode, type TowerInfo,
+  DEFAULT_OPTIONS, TARGET_MODE_NAMES, type FullState, type GameOptions, type LobbyPlayer, type PlayerStats, type ServerMsg, type Snapshot, type TargetMode, type TowerInfo,
 } from '../../../shared/protocol';
 import { auraBuffs, effectiveStats } from '../../../shared/stats';
 import type { Net } from '../net';
@@ -44,6 +44,7 @@ export class GameView {
   private clock = performance.now();
   private hostId: string | null = null;
   private paused: string | null = null;
+  private options: GameOptions = { ...DEFAULT_OPTIONS };
   /** Client-side copy of the tower grid and flow field for route previews and the "don't block" check. */
   private blocked = new Uint8Array(MAP_W * MAP_H);
   private routes: { x: number; y: number }[][] = [];
@@ -152,6 +153,7 @@ export class GameView {
     const mm = this.q<HTMLCanvasElement>('.minimap canvas');
     mm.height = Math.round((230 * MAP_H) / MAP_W);
     mm.style.height = mm.height + 'px';
+    this.options = { ...DEFAULT_OPTIONS, ...state.options };
     this.you = state.you;
     this.hostId = hostId;
     this.players = new Map(state.players.map((p) => [p.id, p]));
@@ -567,7 +569,7 @@ export class GameView {
     if (this.buildDef && h && this.me) {
       const def = this.buildDef;
       const occupied = [...this.ent.towers.values()].some((t) => t.info.cx === h.cx && t.info.cy === h.cy);
-      const own = isBuildable(h.cx, h.cy) && this.sectionOwners[SECTION_OF[cellIndex(h.cx, h.cy)]] === this.you;
+      const own = isBuildable(h.cx, h.cy) && (!this.options.ownZonesOnly || this.sectionOwners[SECTION_OF[cellIndex(h.cx, h.cy)]] === this.you);
       const ok = own && !occupied && this.me.gold >= def.cost && this.me.lumber >= def.lumber && !this.wouldBlock(h.cx, h.cy);
       w.hoverMesh.visible = h.cx >= 0 && h.cy >= 0 && h.cx < MAP_W && h.cy < MAP_H;
       toWorld(h.cx + 0.5, h.cy + 0.5, 0.06, w.hoverMesh.position);
@@ -595,7 +597,7 @@ export class GameView {
     for (const t of this.ent.towers.values()) this.blocked[cellIndex(t.info.cx, t.info.cy)] = 1;
     const flow = computeFlow(this.blocked);
     this.routes = lanesOf(this.sectionOwners).map((l) => traceRoute(flow, this.blocked, SPAWNS[l].x, SPAWNS[l].y));
-    this.world.setRoutes(this.routes);
+    this.world.setRoutes(this.options.showRoute ? this.routes : []);
     this.blockCheck.key = '';
     this.renderMazeInfo();
   }
@@ -618,9 +620,11 @@ export class GameView {
   private renderMazeInfo() {
     const lanes = lanesOf(this.sectionOwners);
     const mine = new Set<number>();
-    this.sectionOwners.forEach((o, s) => { if (o === this.you) mine.add(s % 4); });
+    const el = this.q('.h-maze');
+    el.classList.toggle('hidden', !this.options.showRoute);
+    this.sectionOwners.forEach((o, s) => { if (o === this.you) mine.add(MAP_DEF.zoneHome[s]); });
     const parts = lanes.map((l, i) => `<span class="${mine.has(l) ? 'gold' : 'muted'}">${Math.round(routeLength(this.routes[i] ?? []))}</span>`);
-    this.q('.h-maze').innerHTML = `🧭 Weglänge: ${parts.join(' · ')}`;
+    el.innerHTML = `🧭 Weglänge: ${parts.join(' · ')}`;
   }
 
   private minimapClick(e: MouseEvent) {
@@ -764,7 +768,7 @@ export class GameView {
     }
     ctx.strokeStyle = 'rgba(230,60,40,0.8)';
     ctx.lineWidth = 1;
-    for (const r of this.routes) {
+    for (const r of this.options.showRoute ? this.routes : []) {
       ctx.beginPath();
       r.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy)));
       ctx.stroke();

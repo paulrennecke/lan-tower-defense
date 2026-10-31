@@ -40,6 +40,11 @@ netsh advfirewall firewall add rule name="LAN Tower Defense" dir=in action=allow
 ## Spielablauf
 
 1. **Lobby:** Namen eingeben, eine von 6 Klassen wählen, „Bereit“ klicken. Der Host (👑) wählt die **Karte** und startet das Spiel.
+   Außerdem legt der Host die **Spieloptionen** fest:
+   - **Nur in eigenen Bauzonen bauen** (Standard an) – ausgeschaltet darf jeder in allen Bauzonen bauen,
+     auch in Zonen ohne Besitzer.
+   - **Laufweg der Gegner anzeigen** (Standard an) – ausgeschaltet gibt es keine rote Wegvorschau und keine
+     Weglängen-Anzeige (für erfahrene Spieler).
 2. **Karten** (Northrend-Look: verschneite Plateaus mit Felskanten, Eispfade, zugefrorenes Wasser):
    - **Wintermaul X9** – die klassische Karte: drei Portale im Norden, darunter ein breites Mittelfeld mit
      Eiskanälen, der große Felsgraben (∩) zwingt die Gegner links oder rechts herum, das Tor liegt im See im Süden.

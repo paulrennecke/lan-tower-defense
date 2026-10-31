@@ -162,3 +162,7 @@ table.dmg th { color: var(--gold); background: #1f1a12; }
 .map-card.clickable { cursor: pointer; }
 .map-card.clickable:hover { border-color: #6a5320; }
 .map-card.selected { border-color: var(--gold); box-shadow: 0 0 10px rgba(255, 200, 60, 0.4); }
+
+.options { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; font-size: 14px; }
+.options input { margin-right: 6px; }
+

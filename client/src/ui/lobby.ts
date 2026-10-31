@@ -1,5 +1,5 @@
 import { CLASSES, CLASS_BY_ID } from '../../../shared/data/classes';
-import { MAX_PLAYERS, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
+import { MAX_PLAYERS, type GameOptions, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
 import { CLASS_ICONS, TOWER_ICONS, damageTableHtml, esc, hex } from './format';
 import { MAPS, type MapDef } from '../../../shared/maps';
 
@@ -30,6 +30,7 @@ export interface LobbyActions {
   load(id: string): void;
   deleteSave(id: string): void;
   setMap(id: string): void;
+  setOptions(o: Partial<GameOptions>): void;
 }
 
 type LobbyMsg = Extract<ServerMsg, { t: 'lobby' }>;
@@ -55,6 +56,10 @@ export class LobbyUI {
                 <b>${esc(m.name)}</b>
                 <div class="muted" style="font-size:12px">${esc(m.desc)}</div>
               </div>`).join('')}
+            </div>
+            <div class="options">
+              <label><input type="checkbox" class="opt" data-opt="ownZonesOnly"> Nur in eigenen Bauzonen bauen</label>
+              <label><input type="checkbox" class="opt" data-opt="showRoute"> Laufweg der Gegner anzeigen</label>
             </div>
           </div>
           <div class="panel" style="margin-top:16px">
@@ -139,6 +144,9 @@ export class LobbyUI {
       drawMapPreview(card.querySelector('canvas')!, MAPS.find((m) => m.id === card.dataset.map)!);
       card.onclick = () => { if (this.isHost) actions.setMap(card.dataset.map!); };
     });
+    this.el.querySelectorAll<HTMLInputElement>('.opt').forEach((box) => {
+      box.onchange = () => actions.setOptions({ [box.dataset.opt!]: box.checked });
+    });
   }
 
   private isHost = false;
@@ -175,6 +183,10 @@ export class LobbyUI {
       card.classList.toggle('clickable', isHost);
     });
     this.q('.map-hint').textContent = isHost ? '– wähle die Karte' : '– der Host wählt die Karte';
+    this.el.querySelectorAll<HTMLInputElement>('.opt').forEach((box) => {
+      box.checked = msg.options[box.dataset.opt as keyof GameOptions];
+      box.disabled = !isHost;
+    });
     const readyBtn = this.q<HTMLButtonElement>('.ready');
     readyBtn.classList.toggle('hidden', isHost || !!this.me?.spectator);
     readyBtn.textContent = this.me?.ready ? 'Nicht bereit' : 'Bereit';

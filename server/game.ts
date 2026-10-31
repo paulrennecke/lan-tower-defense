@@ -12,7 +12,7 @@ import {
   laneZones, lanesOf, nextCell, SECTION_OF, setActiveMap, spawnsConnected,
 } from '../shared/map';
 import {
-  EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN,
+  DEFAULT_OPTIONS, type GameOptions, EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN,
   type EnemySnap, type FullState, type Fx, type PlayerStats, type Snapshot, type TargetMode, type TowerInfo,
 } from '../shared/protocol';
 
@@ -108,6 +108,7 @@ export interface GameSave {
   projectiles: Proj[];
   mines: Mine[];
   spawnQueue: { at: number; enemy: string; hpMul: number; wave: number; lane: number }[];
+  options?: GameOptions;
 }
 
 export class Game {
@@ -140,7 +141,10 @@ export class Game {
   private hpMul: number;
   private towersDirty = true;
 
-  constructor(players: { id: string; name: string; color: number; classId: string }[], private hooks: GameHooks = {}) {
+  readonly options: GameOptions;
+
+  constructor(players: { id: string; name: string; color: number; classId: string }[], private hooks: GameHooks = {}, options: Partial<GameOptions> = {}) {
+    this.options = { ...DEFAULT_OPTIONS, ...options };
     for (const p of players) {
       this.players.set(p.id, {
         ...p, gold: START_GOLD, lumber: START_LUMBER, kills: 0, damage: 0, leaks: 0,
@@ -168,7 +172,7 @@ export class Game {
 
   canBuildAt(pid: string, cx: number, cy: number): string | null {
     if (!isBuildable(cx, cy)) return 'Hier kann nicht gebaut werden.';
-    if (this.sectionOwners[SECTION_OF[cellIndex(cx, cy)]] !== pid) return 'Das ist nicht dein Bauabschnitt.';
+    if (this.options.ownZonesOnly && this.sectionOwners[SECTION_OF[cellIndex(cx, cy)]] !== pid) return 'Das ist nicht dein Bauabschnitt.';
     if (this.occupancy.has(cellIndex(cx, cy))) return 'Feld ist belegt.';
     return null;
   }
@@ -727,6 +731,7 @@ export class Game {
         return { ...s, name: p.name, color: p.color, classId: p.classId, connected: lobby.get(s.id)?.connected ?? false, spectator: false };
       }),
       map: this.mapId,
+      options: this.options,
       sectionOwners: this.sectionOwners,
       towers: [...this.towers.values()].map((t) => this.towerInfo(t)),
       mines: [...this.mines.values()].map((m) => [m.id, m.x, m.y]),
@@ -745,7 +750,7 @@ export class Game {
 
   toSave(): GameSave {
     return {
-      version: SAVE_VERSION, map: this.mapId,
+      version: SAVE_VERSION, map: this.mapId, options: { ...this.options },
       time: this.time, wave: this.wave, lives: this.lives, timer: this.timer, victory: this.victory,
       nextId: this.nextId, hpMul: this.hpMul, leaksByWave: { ...this.leaksByWave },
       players: [...this.players.values()].map((p) => ({ ...p, research: { ...p.research }, ready: false, connected: false })),
@@ -766,7 +771,7 @@ export class Game {
     setActiveMap(s.map);
     const players = s.players.filter((p) => CLASS_BY_ID[p.classId]);
     if (players.length !== s.players.length) throw new Error('Spielstand enthält unbekannte Klassen.');
-    const g = new Game(players, hooks);
+    const g = new Game(players, hooks, s.options);
     for (const p of players) g.players.set(p.id, { ...p, research: { ...p.research }, ready: false, connected: false });
     g.sectionOwners.splice(0, g.sectionOwners.length, ...s.sectionOwners);
     g.time = s.time;
