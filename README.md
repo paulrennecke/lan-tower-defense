@@ -109,7 +109,7 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **2–7** | Turm zum Bauen wählen |
 | **Linksklick** | Bauen / Auswählen (**Shift** gedrückt = mehrere bauen) |
 | **Pfeiltasten** (im Baumodus) | Bau-Cursor bewegen (**Shift** = 5 Felder); die Kamera folgt am Rand, **WASD** bewegt sie weiter |
-| **Enter** (im Baumodus) | Turm am Cursor bauen (**Shift+Enter** = Baumodus behalten) |
+| **Enter** / **Leertaste** (im Baumodus) | Turm am Cursor bauen – Turmtyp und Cursorposition bleiben gewählt, so lassen sich mehrere Türme hintereinander setzen; **Esc** beendet den Baumodus |
 | **Rechtsklick / Esc** | Bauen abbrechen / Auswahl aufheben |
 | **U** / **V** | Ausgewählten Turm aufwerten / verkaufen |
 | **F** | Forschung |

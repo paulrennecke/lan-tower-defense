@@ -81,7 +81,7 @@ export class GameView {
       <div class="build-panel panel">
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
-        <div class="build-hint muted hidden" style="margin-top:6px;font-size:12px"><kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> bauen <kbd>⇧+Enter</kbd> mehrere <kbd>Esc</kbd> Abbruch</div>
+        <div class="build-hint muted hidden" style="margin-top:6px;font-size:12px"><kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> bauen <kbd>Esc</kbd> Ende</div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung <kbd>F</kbd></button>
         <div class="h-spectator hidden" style="margin-top:6px">
@@ -605,14 +605,15 @@ export class GameView {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       // Shortcuts that open a dialog must not type their letter into the dialog's input field.
       if (key.length === 1 && 'rgtmq'.includes(key)) e.preventDefault();
-      // Place towers with the keyboard: arrows move the cursor, Enter builds (Shift+Enter keeps the build mode).
+      // Place towers with the keyboard: arrows move the cursor, Enter or Space builds. The tower type and the cursor position
+      // stay selected, so several towers can be placed in a row; Esc ends the build mode.
       if (this.buildDef && e.key.startsWith('Arrow')) {
         e.preventDefault();
         const n = e.shiftKey ? 5 : 1;
         this.moveCursor(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowUp' ? -n : e.key === 'ArrowDown' ? n : 0);
         return;
       }
-      if (e.key === 'Enter' && this.buildDef && this.hover) { e.preventDefault(); this.placeAtCursor(e.shiftKey); return; }
+      if ((e.key === 'Enter' || e.key === ' ') && this.buildDef && this.hover) { e.preventDefault(); this.placeAtCursor(true); return; }
       if (e.key === 'Tab') { e.preventDefault(); if (!e.repeat) this.toggleScore(true); return; }
       if (e.key === 'Enter') { e.preventDefault(); this.openChat(); return; }
       if (e.key === 'Escape') {
@@ -923,7 +924,8 @@ export class GameView {
 
   private lastPreview = '';
   private renderWavePreview() {
-    const n = this.timer >= 0 ? this.wave + 1 : this.wave;
+    // A stale timer from the previous game must never lead to wave 0 (no such wave definition).
+    const n = Math.max(1, this.timer >= 0 ? this.wave + 1 : this.wave);
     const key = `${n}|${this.timer >= 0}`;
     if (key === this.lastPreview) return;
     this.lastPreview = key;
