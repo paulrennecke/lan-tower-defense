@@ -432,16 +432,16 @@ export class GameView {
     o.querySelector('.panel')!.innerHTML = `
       <h2 style="margin-top:0">📜 Forschung – ${esc(cls.name)}</h2>
       <p class="muted" style="margin-top:0">Forschung gilt für alle deine Türme. Kostet Gold und Holz (Holz gibt es zu jeder Welle).</p>
-      <div class="research-list">${cls.research.map((r) => {
+      <div class="research-list">${cls.research.map((r, i) => {
         const lvl = me.research[r.id] ?? 0;
         const maxed = lvl >= r.maxLevel;
         const can = !maxed && me.gold >= r.gold[lvl] && me.lumber >= r.lumber[lvl];
         return `<div class="research-item">
           <div class="desc"><b class="gold">${esc(r.name)}</b> <span class="lvl">Stufe ${lvl}/${r.maxLevel}</span><br>${esc(r.desc)}</div>
-          <button class="primary" data-r="${r.id}" ${can ? '' : 'disabled'}>${maxed ? 'Fertig ✔' : `${r.gold[lvl]} 💰 ${r.lumber[lvl]} 🌲`}</button>
+          <button class="primary" data-r="${r.id}" ${can ? '' : 'disabled'}><kbd>${i + 1}</kbd> ${maxed ? 'Fertig ✔' : `${r.gold[lvl]} 💰 ${r.lumber[lvl]} 🌲`}</button>
         </div>`;
       }).join('')}</div>
-      <div style="text-align:right;margin-top:10px"><button class="close">Schließen (Esc)</button></div>`;
+      <div style="text-align:right;margin-top:10px"><button class="close">Schließen <kbd>Esc</kbd></button></div>`;
     o.querySelectorAll<HTMLButtonElement>('[data-r]').forEach((b) => { b.onclick = () => this.net.send({ t: 'research', id: b.dataset.r! }); });
     o.querySelector<HTMLButtonElement>('.close')!.onclick = () => o.classList.add('hidden');
   }
@@ -631,6 +631,11 @@ export class GameView {
         this.buildDef = null; this.cursorMode = false; this.select(null); this.updateBuildButtons(); this.updateHoverVisuals(); return;
       }
       if (e.key === ' ') { e.preventDefault(); this.focusNext(); return; }
+      if (/^[1-9]$/.test(e.key) && !this.q('.o-research').classList.contains('hidden')) {
+        const r = this.myClass?.research[Number(e.key) - 1];
+        if (r) this.net.send({ t: 'research', id: r.id });
+        return;
+      }
       if (/^[1-9]$/.test(e.key) && this.myClass) {
         const def = this.myClass.towers[Number(e.key) - 1];
         if (def) this.startBuild(def);

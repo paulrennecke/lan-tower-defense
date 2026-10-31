@@ -115,7 +115,7 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **U** / **V** / **C** | Gewählten Turm aufwerten / verkaufen / Zielmodus umschalten |
 | **Rechtsklick / Esc** | Bauen abbrechen / Auswahl aufheben |
 | **U** / **V** | Ausgewählten Turm aufwerten / verkaufen |
-| **F** | Forschung |
+| **F** | Forschung öffnen; darin kauft **1**–**4** die jeweilige Forschung, **Esc** schließt |
 | **N** | Bereit für die nächste Welle (wenn alle bereit sind, startet sie in 3 s) |
 | **WASD / Pfeiltasten**, Bildschirmrand, **rechte/mittlere Maustaste ziehen** | Kamera bewegen |
 | **Mausrad** | Zoomen |
