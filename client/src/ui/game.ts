@@ -71,7 +71,7 @@ export class GameView {
       <div class="topbar panel">
         <div class="stat" title="Welle">⚔ <b class="h-wave">0</b></div>
         <div class="stat timer h-timer"></div>
-        <button class="h-ready" title="Bereit für die nächste Welle (N)">Bereit (N)</button>
+        <button class="h-ready" title="Bereit für die nächste Welle (N)">Bereit <kbd>N</kbd></button>
         <div class="stat" title="Gemeinsame Leben">❤ <b class="h-lives">0</b></div>
         <div class="stat" title="Dein Gold">💰 <b class="h-gold gold">0</b></div>
         <div class="stat" title="Dein Holz">🌲 <b class="h-lumber">0</b></div>
@@ -82,7 +82,7 @@ export class GameView {
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
-        <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung (F)</button>
+        <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung <kbd>F</kbd></button>
         <div class="h-spectator hidden" style="margin-top:6px">
           <div class="muted">Du schaust zu. Steige mit einer Klasse ins laufende Spiel ein:</div>
           <select class="j-class" style="width:100%;margin:6px 0">${CLASSES.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
@@ -96,21 +96,21 @@ export class GameView {
       <div class="toast"></div>
       <div class="bottom-right">
         <div class="game-menu panel hidden">
-          <button class="h-pause">⏸ Pause <small>P</small></button>
+          <button class="h-pause">⏸ Pause <kbd>P</kbd></button>
           <button class="h-save">💾 Spiel speichern</button>
-          <button class="h-score">📊 Punktestand <small>Tab</small></button>
+          <button class="h-score">📊 Punktestand <kbd>Tab</kbd></button>
           <button class="h-route">🧭 Laufweg: an</button>
           <button class="h-zones">🔲 Bauraster: an</button>
           <button class="h-gift">💸 Gold senden</button>
           <button class="h-sound">🔊 Ton: an</button>
           <button class="h-quit hidden">🚪 Spiel beenden</button>
         </div>
-        <button class="h-menu" title="Menü (F10)">☰ Menü <small>F10</small></button>
+        <button class="h-menu" title="Menü (F10)">☰ Menü <kbd>F10</kbd></button>
       </div>
       <div class="pause-box panel hidden">
         <h2>PAUSIERT</h2>
         <div class="muted p-by"></div>
-        <button class="primary p-resume">▶ Fortsetzen (P)</button>
+        <button class="primary p-resume">▶ Fortsetzen <kbd>P</kbd></button>
       </div>
       <div class="tooltip panel hidden"></div>
       <div class="overlay hidden o-research"><div class="panel"></div></div>
@@ -502,8 +502,8 @@ export class GameView {
       const maxLevel = def.maxLevel ?? 2;
       const next = info.level < maxLevel ? def.levels[info.level + 1] : null;
       const upLabel = next
-        ? `⬆ Aufwerten (U)<small>${def.upCost[info.level]} 💰${def.upLumber[info.level] ? ` ${def.upLumber[info.level]} 🌲` : ''}</small>`
-        : 'Max. Stufe<small>&nbsp;</small>';
+        ? `<span>⬆ Aufwerten <kbd>U</kbd></span><small>${def.upCost[info.level]} 💰${def.upLumber[info.level] ? ` ${def.upLumber[info.level]} 🌲` : ''}</small>`
+        : '<span>Max. Stufe</span><small>&nbsp;</small>';
       panel.innerHTML = `
         <div class="portrait" style="border-color:${hex(owner?.color ?? 0xffffff)}">${TOWER_ICONS[def.shape]}</div>
         <div class="info">
@@ -513,7 +513,7 @@ export class GameView {
         </div>
         ${mine ? `<div class="actions">
           <button class="primary up" ${next ? '' : 'disabled'}>${upLabel}</button>
-          <button class="sell">Verkaufen (V)<small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small></button>
+          <button class="sell"><span>Verkaufen <kbd>V</kbd></span><small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small></button>
         </div>` : ''}
         ${mine && eff.dmg > 0 ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${info.mode === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
       const upBtn = panel.querySelector<HTMLButtonElement>('.up');
@@ -664,7 +664,7 @@ export class GameView {
     this.q('.h-save').classList.toggle('hidden', this.spectator);
     this.q('.h-gift').classList.toggle('hidden', this.spectator);
     this.q('.h-pause').classList.toggle('active', !!by);
-    this.q('.h-pause').innerHTML = by ? '▶ Fortsetzen <small>P</small>' : '⏸ Pause <small>P</small>';
+    this.q('.h-pause').innerHTML = by ? '▶ Fortsetzen <kbd>P</kbd>' : '⏸ Pause <kbd>P</kbd>';
     this.updateHud(true);
   }
 
@@ -845,7 +845,7 @@ export class GameView {
     const readyBtn = this.q<HTMLButtonElement>('.h-ready');
     readyBtn.classList.toggle('hidden', this.spectator || this.timer < 0 || this.over);
     readyBtn.classList.toggle('active', !!me?.ready);
-    readyBtn.textContent = me?.ready ? '✔ Bereit' : 'Bereit (N)';
+    readyBtn.innerHTML = me?.ready ? '✔ Bereit' : 'Bereit <kbd>N</kbd>';
     this.q('.h-quit').classList.toggle('hidden', this.hostId !== this.you || !this.active);
     this.q('.h-lives').textContent = String(this.lives);
     this.q('.h-gold').textContent = me ? fmt(me.gold) : '–';
