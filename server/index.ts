@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, createReadStream } from 'node:fs';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { networkInterfaces } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -496,7 +497,7 @@ setInterval(() => {
   if (changed) { ensureHost(); broadcastLobby(); }
 }, 5000);
 
-server.listen(PORT, '0.0.0.0', () => {
+function announce() {
   const virtual = /vethernet|virtualbox|vmware|vbox|wsl|docker|hyper-v|loopback|tailscale|zerotier|hamachi|vpn|tap|tun/i;
   const nets = Object.entries(networkInterfaces()).flatMap(([name, list]) => (list ?? [])
     .filter((i) => i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.'))
@@ -511,4 +512,57 @@ server.listen(PORT, '0.0.0.0', () => {
   if (nets.length > 1) console.log('\n  Mehrere Netzwerke gefunden: Mitspieler probieren die Adresse, die zu ihrem Netzwerk (gleiche ersten Zahlen) passt.');
   console.log('\n  Mitspieler öffnen die LAN-Adresse im Browser (Chrome/Firefox/Edge).');
   console.log('  Windows: ggf. Firewall-Freigabe für Node.js / Port ' + PORT + ' erlauben.\n');
-});
+}
+
+/** Process ids that listen on the port (Windows: netstat, otherwise lsof). */
+function pidsOnPort(): number[] {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8' });
+      const pids = out.split(/\r?\n/).map((l) => l.trim().split(/\s+/)).filter((c) => c.length >= 5 && c[1].endsWith(`:${PORT}`) && /:0$/.test(c[2])).map((c) => Number(c[c.length - 1]));
+      return [...new Set(pids)];
+    }
+    return execFileSync('lsof', ['-ti', `tcp:${PORT}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).split(/\s+/).filter(Boolean).map(Number);
+  } catch { return []; }
+}
+
+/** Stops an old LAN TD server that still holds the port. Anything else on the port is left alone. */
+async function stopOldServer(): Promise<boolean> {
+  try {
+    const html = await (await fetch(`http://127.0.0.1:${PORT}/`, { signal: AbortSignal.timeout(2000) })).text();
+    if (!html.includes('LAN TD')) return false;
+  } catch { return false; }
+  const pids = pidsOnPort().filter((p) => p > 0 && p !== process.pid);
+  if (!pids.length) return false;
+  for (const pid of pids) {
+    try {
+      if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' });
+      else process.kill(pid, 'SIGTERM');
+    } catch { /* already gone */ }
+  }
+  console.log(`  Port ${PORT} war von einem alten LAN-TD-Server belegt (PID ${pids.join(', ')}) – wurde beendet, starte neu …`);
+  return true;
+}
+
+let retried = false;
+let handlingError = false;
+function onListenError(err: NodeJS.ErrnoException) {
+  if (err.code !== 'EADDRINUSE') { console.error(err); process.exit(1); }
+  if (handlingError) return;
+  handlingError = true;
+  void (async () => {
+    if (!retried && await stopOldServer()) {
+      retried = true;
+      setTimeout(() => { handlingError = false; listen(); }, 1000);
+    } else {
+      console.error(`\n  Port ${PORT} ist belegt (nicht von LAN TD). Anderen Port wählen: PORT=3001 npm start\n`);
+      process.exit(1);
+    }
+  })();
+}
+server.on('error', onListenError);
+wss.on('error', onListenError);
+
+server.once('listening', announce);
+function listen() { server.listen(PORT, '0.0.0.0'); }
+listen();
