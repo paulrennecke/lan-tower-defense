@@ -348,8 +348,12 @@ export class Game {
         const s = this.spawnQueue.shift()!;
         this.spawnEnemy(s.enemy, s.wave, s.hpMul, s.lane);
       }
-      if (this.spawnQueue.length === 0) this.timer = WAVE_COUNTDOWN;
       return;
+    }
+    // The countdown to the next wave only starts once the last creep of the current wave is gone.
+    if (this.timer < 0) {
+      if (this.enemies.some((e) => !e.dead)) return;
+      this.timer = WAVE_COUNTDOWN;
     }
     const active = [...this.players.values()].filter((p) => p.connected);
     if (active.length > 0 && active.every((p) => p.ready) && this.timer > 3) this.timer = 3;
@@ -764,7 +768,7 @@ export class Game {
     this.fx = [];
     // Kill stats are refreshed on towers lazily via snapshot consumers; tower kill counts are in tower events.
     return {
-      t: 'snap', time: Math.round(now * 1000) / 1000, wave: this.wave, timer: this.spawnQueue.length ? -1 : Math.max(0, this.timer),
+      t: 'snap', time: Math.round(now * 1000) / 1000, wave: this.wave, timer: this.timer < 0 ? -1 : Math.max(0, this.timer),
       lives: this.lives, paused: this.paused, enemies, players: this.playerStats(), fx,
     };
   }

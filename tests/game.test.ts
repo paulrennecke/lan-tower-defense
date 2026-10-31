@@ -227,7 +227,7 @@ describe('Game simulation', () => {
     const c2 = cellNear(g, 'p0', 12);
     g.build('p0', 'h_arcane', c2.cx, c2.cy);
     const shade2 = g.spawnEnemy('shade', 5, 1, laneOf(g, 'p0'));
-    run(g, 4);
+    run(g, 8);
     expect(shade2.hp).toBeLessThan(shade2.maxHp);
   });
 
@@ -305,6 +305,27 @@ describe('Game simulation', () => {
     expect(summary.players).toBe(2);
     expect(summary.topTower?.def).toBe('h_watch');
     expect(summary.topKilled[0][1]).toBeGreaterThan(0);
+  });
+
+  it('the countdown to the next wave starts only after the last creep is gone', () => {
+    const g = mkGame(['human']);
+    g.startWave();
+    expect(g.timer).toBe(-1);
+    // Let everything spawn; creeps are still alive, so there is no countdown.
+    while (g.pendingSpawns > 0) g.tick(0.05);
+    run(g, 3);
+    expect(g.enemyCount).toBeGreaterThan(0);
+    expect(g.snapshot().timer).toBe(-1);
+    // Kill everything: the countdown starts.
+    for (const e of g.enemies) e.hp = 0.0001;
+    g.enemies.forEach((e) => { e.dead = true; });
+    run(g, 0.2);
+    expect(g.enemyCount).toBe(0);
+    expect(g.timer).toBeGreaterThan(0);
+    expect(g.timer).toBeLessThanOrEqual(22);
+    const before = g.timer;
+    run(g, 2);
+    expect(g.timer).toBeLessThan(before);
   });
 
   it('bots survive the first waves (balance smoke test)', () => {
