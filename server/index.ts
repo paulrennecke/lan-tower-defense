@@ -497,11 +497,18 @@ setInterval(() => {
 }, 5000);
 
 server.listen(PORT, '0.0.0.0', () => {
-  const ips = Object.values(networkInterfaces()).flat()
-    .filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i!.address);
+  const virtual = /vethernet|virtualbox|vmware|vbox|wsl|docker|hyper-v|loopback|tailscale|zerotier|hamachi|vpn|tap|tun/i;
+  const nets = Object.entries(networkInterfaces()).flatMap(([name, list]) => (list ?? [])
+    .filter((i) => i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.'))
+    .map((i) => ({ name, ip: i.address, virt: virtual.test(name), priv: /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(i.address) })))
+    .sort((a, b) => Number(a.virt) - Number(b.virt) || Number(b.priv) - Number(a.priv));
   console.log('\n  ❄  LAN TD läuft!\n');
   console.log(`  Lokal:   http://localhost:${PORT}`);
-  for (const ip of ips) console.log(`  Im LAN:  http://${ip}:${PORT}`);
+  nets.forEach((n, i) => {
+    const note = i === 0 ? '  ← wahrscheinlich diese' : n.virt ? '  (virtueller Adapter, meist nicht passend)' : '';
+    console.log(`  Im LAN:  http://${n.ip}:${PORT}   [${n.name}]${note}`);
+  });
+  if (nets.length > 1) console.log('\n  Mehrere Netzwerke gefunden: Mitspieler probieren die Adresse, die zu ihrem Netzwerk (gleiche ersten Zahlen) passt.');
   console.log('\n  Mitspieler öffnen die LAN-Adresse im Browser (Chrome/Firefox/Edge).');
   console.log('  Windows: ggf. Firewall-Freigabe für Node.js / Port ' + PORT + ' erlauben.\n');
 });
