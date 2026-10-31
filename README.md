@@ -126,7 +126,7 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **R** / **G** | Laufweg / Bauraster ein- und ausblenden |
 | **T** | Gold an einen Mitspieler senden |
 | **M** | Ton an/aus |
-| **Q** | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |
+| **Shift+Q** | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |
 
 Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich die Zielwahl einstellen
 (Vorderster, Hinterster, Stärkster, Schwächster, Nächster). Die Aufwerten-/Verkaufen-Knöpfe haben feste Größe und Position;

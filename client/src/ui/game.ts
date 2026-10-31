@@ -104,7 +104,7 @@ export class GameView {
           <button class="h-zones">🔲 Bauraster: an <kbd>G</kbd></button>
           <button class="h-gift">💸 Gold senden <kbd>T</kbd></button>
           <button class="h-sound">🔊 Ton: an <kbd>M</kbd></button>
-          <button class="h-quit hidden">🚪 Spiel beenden <kbd>Q</kbd></button>
+          <button class="h-quit hidden">🚪 Spiel beenden <kbd>Shift+Q</kbd></button>
         </div>
         <button class="h-menu" title="Menü (F10)">☰ Menü <kbd>F10</kbd></button>
       </div>
@@ -636,7 +636,8 @@ export class GameView {
       else if (key === 'g') this.toggleGrid();
       else if (key === 't') this.openGift();
       else if (key === 'm') this.toggleSound();
-      else if (key === 'q') this.openQuit();
+      // Ending the game for everybody needs Shift so it cannot happen by a stray key press.
+      else if (key === 'q' && e.shiftKey) this.openQuit();
       else if (e.key === 'F10') { e.preventDefault(); this.toggleMenu(); }
     });
   }
