@@ -122,7 +122,14 @@ function broadcastLobby() { broadcast(lobbyMsg()); }
 function sendGameState(e: Entry) {
   if (!game) return;
   send(e.ws, { t: 'game', state: game.fullState(e.id, entries, highscore) });
+  // Players who (re)connect after the game ended must see the game-over screen, too.
+  if (phase === 'gameover' && lastGameOver) {
+    send(e.ws, game.snapshot());
+    send(e.ws, lastGameOver);
+  }
 }
+
+let lastGameOver: Extract<ServerMsg, { t: 'gameOver' }> | null = null;
 
 function freeColor(): number {
   const used = new Set([...entries.values()].map((e) => e.color));
@@ -247,14 +254,16 @@ function endGame(wave: number, victory: boolean) {
   saveHighscore(reached);
   phase = 'gameover';
   broadcast(game.snapshot());
-  broadcast({
+  lastGameOver = {
     t: 'gameOver', wave: reached, victory, highscore,
     stats: [...game.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, damage: Math.round(p.damage), leaks: p.leaks })),
-  });
+  };
+  broadcast(lastGameOver);
   broadcastLobby();
 }
 
 function backToLobby() {
+  lastGameOver = null;
   if (loop) clearInterval(loop);
   loop = null;
   game = null;

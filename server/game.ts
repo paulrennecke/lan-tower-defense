@@ -193,7 +193,8 @@ export class Game {
   build(pid: string, defId: string, cx: number, cy: number): string | null {
     const p = this.players.get(pid);
     const def = TOWER_BY_ID[defId];
-    if (!p || !def || this.over) return 'Ungültig.';
+    if (this.over) return 'Das Spiel ist vorbei.';
+    if (!p || !def) return 'Ungültig.';
     if (def.cls !== p.classId) return 'Dieser Turm gehört nicht zu deiner Klasse.';
     if (def.requires && !p.research[def.requires]) return 'Erst erforschen: ' + RESEARCH_BY_ID[def.requires].name;
     const err = this.canBuildAt(pid, cx, cy);
@@ -220,7 +221,8 @@ export class Game {
   upgrade(pid: string, id: number): string | null {
     const p = this.players.get(pid);
     const t = this.towers.get(id);
-    if (!p || !t || t.owner !== pid || this.over) return 'Ungültig.';
+    if (this.over) return 'Das Spiel ist vorbei.';
+    if (!p || !t || t.owner !== pid) return 'Ungültig.';
     if (t.level >= (TOWER_BY_ID[t.def].maxLevel ?? 2)) return 'Maximale Stufe erreicht.';
     const def = TOWER_BY_ID[t.def];
     const cost = def.upCost[t.level], lumber = def.upLumber[t.level];
@@ -238,7 +240,8 @@ export class Game {
   sell(pid: string, id: number): string | null {
     const p = this.players.get(pid);
     const t = this.towers.get(id);
-    if (!p || !t || t.owner !== pid || this.over) return 'Ungültig.';
+    if (this.over) return 'Das Spiel ist vorbei.';
+    if (!p || !t || t.owner !== pid) return 'Ungültig.';
     p.gold += Math.floor(t.invested * SELL_REFUND);
     this.towers.delete(id);
     this.occupancy.delete(cellIndex(t.cx, t.cy));
@@ -261,7 +264,8 @@ export class Game {
   research(pid: string, rid: string): string | null {
     const p = this.players.get(pid);
     const r = RESEARCH_BY_ID[rid];
-    if (!p || !r || this.over) return 'Ungültig.';
+    if (this.over) return 'Das Spiel ist vorbei.';
+    if (!p || !r) return 'Ungültig.';
     if (!CLASS_BY_ID[p.classId].research.includes(r)) return 'Gehört nicht zu deiner Klasse.';
     const lvl = p.research[rid] ?? 0;
     if (lvl >= r.maxLevel) return 'Bereits vollständig erforscht.';
