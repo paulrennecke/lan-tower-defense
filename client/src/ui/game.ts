@@ -372,10 +372,10 @@ export class GameView {
     this.q('.h-class').innerHTML = `${CLASS_ICONS[cls.id]} ${esc(cls.name)}`;
     grid.innerHTML = cls.towers.map((t, i) => `
       <button class="build-btn" data-def="${t.id}">
-        <kbd class="hk">${i + 1}</kbd>
         <span class="ico">${TOWER_ICONS[t.shape]}</span>
         <span class="nm">${esc(t.name)}</span>
         <span class="cost">${t.cost}${t.lumber ? ` +${t.lumber}🌲` : ''}</span>
+        <kbd class="hk">${i + 1}</kbd>
       </button>`).join('');
     grid.querySelectorAll<HTMLButtonElement>('.build-btn').forEach((b) => {
       const def = TOWER_BY_ID[b.dataset.def!];
@@ -438,7 +438,7 @@ export class GameView {
         const can = !maxed && me.gold >= r.gold[lvl] && me.lumber >= r.lumber[lvl];
         return `<div class="research-item">
           <div class="desc"><b class="gold">${esc(r.name)}</b> <span class="lvl">Stufe ${lvl}/${r.maxLevel}</span><br>${esc(r.desc)}</div>
-          <button class="primary" data-r="${r.id}" ${can ? '' : 'disabled'}><kbd>${i + 1}</kbd> ${maxed ? 'Fertig ✔' : `${r.gold[lvl]} 💰 ${r.lumber[lvl]} 🌲`}</button>
+          <button class="primary" data-r="${r.id}" ${can ? '' : 'disabled'}>${maxed ? 'Fertig ✔' : `${r.gold[lvl]} 💰 ${r.lumber[lvl]} 🌲`}<kbd>${i + 1}</kbd></button>
         </div>`;
       }).join('')}</div>
       <div style="text-align:right;margin-top:10px"><button class="close">Schließen <kbd>Esc</kbd></button></div>`;
