@@ -122,6 +122,7 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **Tab** (halten) | Punktestand |
 | **P** / ⏸ | Spiel pausieren / fortsetzen (jeder Spieler) |
 | 💾 | Spiel speichern |
+| 🚪 | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |
 
 Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich die Zielwahl einstellen
 (Vorderster, Hinterster, Stärkster, Schwächster, Nächster).

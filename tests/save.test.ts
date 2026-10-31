@@ -85,6 +85,13 @@ describe('pause, save & load over the network', () => {
     // Delete is only possible in the lobby.
     b2.send({ t: 'deleteSave', id: l2.saves[0].id });
     await b2.wait('error', (m) => m.msg.includes('Host'));
+
+    // Only the host can end the game; saving on quit adds a save and everybody returns to the lobby.
+    a2.send({ t: 'quitGame' });
+    await a2.wait('error', (m) => m.msg.includes('Host'));
+    b2.send({ t: 'quitGame', save: 'Feierabend' });
+    const back = await a2.wait('lobby', (m) => m.phase === 'lobby' && m.saves.length === 2);
+    expect(back.saves.some((s) => s.name === 'Feierabend')).toBe(true);
     a2.close(); b2.close();
   }, 40000);
 });

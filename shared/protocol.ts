@@ -126,7 +126,9 @@ export type ClientMsg =
   | { t: 'save'; name: string }
   | { t: 'load'; id: string }
   | { t: 'deleteSave'; id: string }
-  | { t: 'backToLobby' };
+  | { t: 'backToLobby' }
+  /** Host ends the running game for everybody (optionally saving it first). */
+  | { t: 'quitGame'; save?: string };
 
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string }

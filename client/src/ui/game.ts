@@ -88,6 +88,7 @@ export class GameView {
         <button class="h-save" title="Spiel speichern">💾</button>
         <button class="h-sound" title="Ton an/aus">🔊</button>
         <button class="h-score" title="Punktestand (Tab)">📊</button>
+        <button class="h-quit hidden" title="Spiel beenden (nur Host)">🚪</button>
       </div>
       <div class="pause-box panel hidden">
         <h2>PAUSIERT</h2>
@@ -98,6 +99,14 @@ export class GameView {
       <div class="overlay hidden o-research"><div class="panel"></div></div>
       <div class="overlay hidden o-score"><div class="panel scoreboard"></div></div>
       <div class="overlay hidden o-over"><div class="panel"></div></div>
+      <div class="overlay hidden o-quit"><div class="panel" style="min-width:440px">
+        <h2 style="margin-top:0">🚪 Spiel beenden?</h2>
+        <div class="muted">Alle Spieler kehren ins Hauptmenü (Lobby) zurück. Möchtest du das Spiel vorher speichern?</div>
+        <input class="quit-name" maxlength="40" style="width:100%;margin-top:10px" placeholder="Name des Spielstands">
+        <div class="row" style="margin-top:12px;justify-content:flex-end;gap:6px">
+          <button class="q-cancel">Abbrechen</button><button class="q-nosave">Nicht speichern</button><button class="primary q-save">Speichern &amp; beenden</button>
+        </div>
+      </div></div>
       <div class="overlay hidden o-save"><div class="panel" style="min-width:420px">
         <h2 style="margin-top:0">💾 Spiel speichern</h2>
         <input class="save-name" maxlength="40" style="width:100%" placeholder="Name des Spielstands">
@@ -114,6 +123,14 @@ export class GameView {
     this.q('.h-pause').onclick = () => this.togglePause();
     this.q('.p-resume').onclick = () => this.togglePause();
     this.q('.h-save').onclick = () => this.saveGame();
+    this.q('.h-quit').onclick = () => this.openQuit();
+    const quitIn = this.q<HTMLInputElement>('.quit-name');
+    const closeQuit = () => this.q('.o-quit').classList.add('hidden');
+    this.q('.q-cancel').onclick = closeQuit;
+    this.q('.q-nosave').onclick = () => { closeQuit(); this.net.send({ t: 'quitGame' }); };
+    const saveQuit = () => { closeQuit(); this.net.send({ t: 'quitGame', save: quitIn.value.trim() || quitIn.placeholder }); };
+    this.q('.q-save').onclick = saveQuit;
+    quitIn.onkeydown = (e) => { if (e.key === 'Enter') saveQuit(); else if (e.key === 'Escape') closeQuit(); };
     const saveIn = this.q<HTMLInputElement>('.save-name');
     const submitSave = () => {
       const name = saveIn.value.trim() || saveIn.placeholder;
@@ -538,12 +555,24 @@ export class GameView {
     this.updateHud(true);
   }
 
+  private openQuit() {
+    if (this.hostId !== this.you) return;
+    const d = new Date();
+    const input = this.q<HTMLInputElement>('.quit-name');
+    input.value = '';
+    input.placeholder = `Welle ${this.wave} – ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    input.classList.toggle('hidden', this.over);
+    this.q<HTMLButtonElement>('.q-save').classList.toggle('hidden', this.over);
+    this.q('.o-quit').classList.remove('hidden');
+    input.focus();
+  }
+
   private saveGame() {
     if (this.spectator || this.over) return;
     const d = new Date();
     const input = this.q<HTMLInputElement>('.save-name');
     input.value = '';
-    input.placeholder = `Welle ${this.wave} – ${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
+    input.placeholder = `Welle ${this.wave} – ${d.toLocaleDateString()} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
     this.q('.o-save').classList.remove('hidden');
     input.focus();
   }
@@ -681,6 +710,7 @@ export class GameView {
     readyBtn.classList.toggle('hidden', this.spectator || this.timer < 0 || this.over);
     readyBtn.classList.toggle('active', !!me?.ready);
     readyBtn.textContent = me?.ready ? '✔ Bereit' : 'Bereit (N)';
+    this.q('.h-quit').classList.toggle('hidden', this.hostId !== this.you || !this.active);
     this.q('.h-lives').textContent = String(this.lives);
     this.q('.h-gold').textContent = me ? fmt(me.gold) : '–';
     this.q('.h-lumber').textContent = me ? String(me.lumber) : '–';

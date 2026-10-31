@@ -411,6 +411,16 @@ wss.on('connection', (ws) => {
         broadcastLobby();
         break;
       }
+      case 'quitGame': {
+        if (phase === 'lobby' || p.id !== hostId) return err('Nur der Host kann das Spiel beenden.');
+        if (msg.save !== undefined && game && phase === 'playing') {
+          const name = String(msg.save).replace(/[<>]/g, '').trim().slice(0, 40) || `Welle ${game.wave}`;
+          try { sysChat(`💾 Spiel gespeichert: „${saveGame(name)}“`); } catch (e) { return err('Speichern fehlgeschlagen: ' + (e as Error).message); }
+        }
+        sysChat(`${p.name} hat das Spiel beendet. Zurück in der Lobby.`);
+        backToLobby();
+        break;
+      }
       case 'backToLobby':
         if (phase === 'gameover' && p.id === hostId) backToLobby();
         break;
