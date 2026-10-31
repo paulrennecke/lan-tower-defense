@@ -95,9 +95,21 @@ Jeder Turm hat **3 Stufen**. Jede Klasse hat **4 Forschungen** (globale Boni und
 | **Alt + Klick** | Ping auf der Karte für alle |
 | **Enter** | Chat |
 | **Tab** (halten) | Punktestand |
+| **P** / ⏸ | Spiel pausieren / fortsetzen (jeder Spieler) |
+| 💾 | Spiel speichern |
 
 Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich die Zielwahl einstellen
 (Vorderster, Hinterster, Stärkster, Schwächster, Nächster).
+
+### Pause, Speichern & Laden
+
+- **Pause:** Jeder Spieler kann das Spiel mit **P** oder ⏸ anhalten und fortsetzen. Während der Pause stehen
+  Gegner und Countdown still; Bauen, Aufwerten, Verkaufen und Forschung sind gesperrt.
+- **Speichern:** Mit 💾 jederzeit während des Spiels. Die Spielstände liegen auf dem Server-Rechner im Ordner
+  `saves/` (gleicher Name überschreibt den alten Spielstand).
+- **Laden:** Der Host 👑 lädt einen Spielstand in der Lobby (Liste „💾 Spielstände“). Spieler übernehmen den
+  Platz mit **gleichem Namen**, die übrigen Plätze werden der Reihe nach vergeben. Klassen kommen aus dem Spielstand.
+  Unbesetzte Plätze übernehmen später beitretende Spieler automatisch. Ein geladenes Spiel startet pausiert.
 
 ### Verbindung & Zuschauer
 

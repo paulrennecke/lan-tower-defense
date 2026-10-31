@@ -40,6 +40,7 @@ export class GameView {
   private minimapBg: HTMLCanvasElement | null = null;
   private clock = performance.now();
   private hostId: string | null = null;
+  private paused: string | null = null;
 
   constructor(root: HTMLElement, private net: Net) {
     this.el = document.createElement('div');
@@ -74,18 +75,48 @@ export class GameView {
       <div class="banner"></div>
       <div class="toast"></div>
       <div class="bottom-right">
+        <button class="h-pause" title="Pause (P)">⏸</button>
+        <button class="h-save" title="Spiel speichern">💾</button>
         <button class="h-sound" title="Ton an/aus">🔊</button>
         <button class="h-score" title="Punktestand (Tab)">📊</button>
+      </div>
+      <div class="pause-box panel hidden">
+        <h2>PAUSIERT</h2>
+        <div class="muted p-by"></div>
+        <button class="primary p-resume">▶ Fortsetzen (P)</button>
       </div>
       <div class="tooltip panel hidden"></div>
       <div class="overlay hidden o-research"><div class="panel"></div></div>
       <div class="overlay hidden o-score"><div class="panel scoreboard"></div></div>
-      <div class="overlay hidden o-over"><div class="panel"></div></div>`;
+      <div class="overlay hidden o-over"><div class="panel"></div></div>
+      <div class="overlay hidden o-save"><div class="panel" style="min-width:420px">
+        <h2 style="margin-top:0">💾 Spiel speichern</h2>
+        <input class="save-name" maxlength="40" style="width:100%" placeholder="Name des Spielstands">
+        <div class="muted" style="font-size:12px;margin-top:4px">Gleicher Name überschreibt einen vorhandenen Spielstand. Laden kann der Host in der Lobby.</div>
+        <div class="row" style="margin-top:10px;justify-content:flex-end;gap:6px">
+          <button class="s-cancel">Abbrechen</button><button class="primary s-ok">Speichern</button>
+        </div>
+      </div></div>`;
     this.el.appendChild(hud);
 
     this.q('.h-ready').onclick = () => this.toggleReady();
     this.q('.h-research').onclick = () => this.toggleResearch();
     this.q('.h-score').onclick = () => this.toggleScore();
+    this.q('.h-pause').onclick = () => this.togglePause();
+    this.q('.p-resume').onclick = () => this.togglePause();
+    this.q('.h-save').onclick = () => this.saveGame();
+    const saveIn = this.q<HTMLInputElement>('.save-name');
+    const submitSave = () => {
+      const name = saveIn.value.trim() || saveIn.placeholder;
+      this.net.send({ t: 'save', name });
+      this.q('.o-save').classList.add('hidden');
+    };
+    this.q('.s-ok').onclick = submitSave;
+    this.q('.s-cancel').onclick = () => this.q('.o-save').classList.add('hidden');
+    saveIn.onkeydown = (e) => {
+      if (e.key === 'Enter') submitSave();
+      else if (e.key === 'Escape') this.q('.o-save').classList.add('hidden');
+    };
     this.q('.h-sound').onclick = () => { sfx.setEnabled(!sfx.enabled); this.q('.h-sound').textContent = sfx.enabled ? '🔊' : '🔇'; };
     this.el.querySelectorAll<HTMLElement>('.overlay').forEach((o) => {
       o.addEventListener('mousedown', (e) => { if (e.target === o) o.classList.add('hidden'); });
@@ -113,6 +144,7 @@ export class GameView {
     this.lives = state.lives;
     this.highscore = state.highscore;
     this.over = false;
+    this.setPaused(null);
     this.selected = null;
     this.buildDef = null;
     this.ent.clear();
@@ -180,6 +212,7 @@ export class GameView {
     this.wave = s.wave;
     this.lives = s.lives;
     this.timer = s.timer;
+    if (s.paused !== this.paused) this.setPaused(s.paused);
     for (const ps of s.players) {
       const p = this.players.get(ps.id);
       if (p) {
@@ -460,7 +493,37 @@ export class GameView {
       else if (key === 'v' && sel && sel.info.owner === this.you) this.net.send({ t: 'sell', id: sel.info.id });
       else if (key === 'f') this.toggleResearch();
       else if (key === 'n') this.toggleReady();
+      else if (key === 'p') this.togglePause();
     });
+  }
+
+  private togglePause() {
+    if (this.spectator || this.over) return;
+    this.net.send({ t: 'pause', paused: !this.paused });
+  }
+
+  private setPaused(by: string | null) {
+    this.paused = by;
+    this.ent.paused = !!by;
+    this.el.classList.toggle('paused', !!by);
+    this.q('.pause-box').classList.toggle('hidden', !by);
+    this.q('.p-by').textContent = by ? `von ${by}` : '';
+    this.q('.p-resume').classList.toggle('hidden', this.spectator);
+    this.q('.h-pause').classList.toggle('hidden', this.spectator);
+    this.q('.h-save').classList.toggle('hidden', this.spectator);
+    this.q('.h-pause').classList.toggle('active', !!by);
+    this.q('.h-pause').textContent = by ? '▶' : '⏸';
+    this.updateHud(true);
+  }
+
+  private saveGame() {
+    if (this.spectator || this.over) return;
+    const d = new Date();
+    const input = this.q<HTMLInputElement>('.save-name');
+    input.value = '';
+    input.placeholder = `Welle ${this.wave} – ${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
+    this.q('.o-save').classList.remove('hidden');
+    input.focus();
   }
 
   private openChat() {
@@ -554,7 +617,7 @@ export class GameView {
     this.q('.h-wave').textContent = this.wave > VICTORY_WAVE ? `Endlos ${this.wave}` : `${this.wave}/${VICTORY_WAVE}`;
     const connected = [...this.players.values()].filter((p) => p.connected);
     const readyCount = connected.filter((p) => p.ready).length;
-    this.q('.h-timer').innerHTML = this.over ? 'Spiel vorbei' : this.timer >= 0
+    this.q('.h-timer').innerHTML = this.over ? 'Spiel vorbei' : this.paused ? '⏸ <b>Pausiert</b>' : this.timer >= 0
       ? `Nächste Welle in <b>${Math.ceil(this.timer)}s</b> <span class="ready-list">(${readyCount}/${connected.length} bereit)</span>`
       : 'Welle läuft…';
     const readyBtn = this.q<HTMLButtonElement>('.h-ready');
@@ -671,7 +734,7 @@ export class GameView {
     const dt = Math.min(0.1, (now - this.clock) / 1000);
     this.clock = now;
     if (!this.active) return;
-    if (this.timer > 0) this.timer = Math.max(0, this.timer - dt);
+    if (this.timer > 0 && !this.paused) this.timer = Math.max(0, this.timer - dt);
     this.ent.update(dt, now / 1000);
     if (this.selected?.kind === 'enemy') {
       const e = this.ent.enemies.get(this.selected.id);

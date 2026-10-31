@@ -81,6 +81,27 @@ export interface GameHooks {
 
 export const SELL_REFUND = 0.75;
 
+export const SAVE_VERSION = 1;
+
+export interface GameSave {
+  version: number;
+  time: number;
+  wave: number;
+  lives: number;
+  timer: number;
+  victory: boolean;
+  nextId: number;
+  hpMul: number;
+  leaksByWave: Record<number, number>;
+  players: GamePlayer[];
+  sectionOwners: string[];
+  towers: (TowerInfo & { cdLeft: number })[];
+  enemies: Omit<Enemy, 'def'>[];
+  projectiles: Proj[];
+  mines: Mine[];
+  spawnQueue: { at: number; enemy: string; hpMul: number; wave: number }[];
+}
+
 export class Game {
   time = 0;
   wave = 0;
@@ -88,6 +109,8 @@ export class Game {
   timer = FIRST_COUNTDOWN;
   over = false;
   victory = false;
+  /** Name of the player who paused the game; null while running. */
+  paused: string | null = null;
   readonly leaksByWave: Record<number, number> = {};
   readonly players = new Map<string, GamePlayer>();
   readonly sectionOwners: string[];
@@ -214,7 +237,7 @@ export class Game {
   // ------------------------------------------------------------------ simulation
 
   tick(dt: number) {
-    if (this.over) return;
+    if (this.over || this.paused) return;
     this.time += dt;
     if (this.towersDirty) this.recalcTowers();
     this.updateWaves(dt);
@@ -607,7 +630,7 @@ export class Game {
     // Kill stats are refreshed on towers lazily via snapshot consumers; tower kill counts are in tower events.
     return {
       t: 'snap', time: Math.round(now * 1000) / 1000, wave: this.wave, timer: this.spawnQueue.length ? -1 : Math.max(0, this.timer),
-      lives: this.lives, enemies, players: this.playerStats(), fx,
+      lives: this.lives, paused: this.paused, enemies, players: this.playerStats(), fx,
     };
   }
 
@@ -631,6 +654,62 @@ export class Game {
   /** Total current tower count per player (used by tests/bots). */
   towersOf(pid: string) {
     return [...this.towers.values()].filter((t) => t.owner === pid);
+  }
+
+  // ------------------------------------------------------------------ save / load
+
+  toSave(): GameSave {
+    return {
+      version: SAVE_VERSION,
+      time: this.time, wave: this.wave, lives: this.lives, timer: this.timer, victory: this.victory,
+      nextId: this.nextId, hpMul: this.hpMul, leaksByWave: { ...this.leaksByWave },
+      players: [...this.players.values()].map((p) => ({ ...p, research: { ...p.research }, ready: false, connected: false })),
+      sectionOwners: [...this.sectionOwners],
+      towers: [...this.towers.values()].map((t) => ({ ...this.towerInfo(t), damage: t.damage, cdLeft: t.cdLeft })),
+      enemies: this.enemies.filter((e) => !e.dead).map(({ def: _def, dots, ...e }) => ({ ...e, dots: dots.map((d) => ({ ...d })) })),
+      projectiles: this.projectiles.map((p) => ({ ...p })),
+      mines: [...this.mines.values()].map((m) => ({ ...m })),
+      spawnQueue: this.spawnQueue.map((s) => ({ ...s })),
+    };
+  }
+
+  /** Restores a saved game. All players start disconnected; the game starts paused. */
+  static fromSave(s: GameSave, hooks: GameHooks = {}, pausedBy = 'Spielstand'): Game {
+    if (!s || s.version !== SAVE_VERSION || !Array.isArray(s.players) || s.players.length === 0) {
+      throw new Error('Ungültiger oder inkompatibler Spielstand.');
+    }
+    const players = s.players.filter((p) => CLASS_BY_ID[p.classId]);
+    if (players.length !== s.players.length) throw new Error('Spielstand enthält unbekannte Klassen.');
+    const g = new Game(players, hooks);
+    for (const p of players) g.players.set(p.id, { ...p, research: { ...p.research }, ready: false, connected: false });
+    g.sectionOwners.splice(0, g.sectionOwners.length, ...s.sectionOwners);
+    g.time = s.time;
+    g.wave = s.wave;
+    g.lives = s.lives;
+    g.timer = s.timer;
+    g.victory = s.victory;
+    g.nextId = s.nextId;
+    g.hpMul = s.hpMul;
+    Object.assign(g.leaksByWave, s.leaksByWave);
+    for (const t of s.towers) {
+      if (!TOWER_BY_ID[t.def] || !g.players.has(t.owner)) continue;
+      const tower: Tower = { ...t, x: t.cx + 0.5, y: t.cy + 0.5, stats: TOWER_BY_ID[t.def].levels[t.level] };
+      g.towers.set(t.id, tower);
+      g.occupancy.set(cellIndex(t.cx, t.cy), t.id);
+    }
+    for (const e of s.enemies) {
+      const def = ENEMIES[e.typeIdx];
+      if (!def) continue;
+      const enemy: Enemy = { ...e, def, dots: e.dots.map((d) => ({ ...d })) };
+      g.enemies.push(enemy);
+      g.enemyById.set(enemy.id, enemy);
+    }
+    g.projectiles = s.projectiles.map((p) => ({ ...p }));
+    for (const m of s.mines) g.mines.set(m.id, { ...m });
+    g.spawnQueue = s.spawnQueue.filter((q) => ENEMY_BY_ID[q.enemy]).map((q) => ({ ...q }));
+    g.recalcTowers();
+    g.paused = pausedBy;
+    return g;
   }
 
   get enemyCount() { return this.enemies.length; }

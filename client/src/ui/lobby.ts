@@ -8,6 +8,8 @@ export interface LobbyActions {
   ready(r: boolean): void;
   start(): void;
   chat(text: string): void;
+  load(id: string): void;
+  deleteSave(id: string): void;
 }
 
 type LobbyMsg = Extract<ServerMsg, { t: 'lobby' }>;
@@ -50,6 +52,7 @@ export class LobbyUI {
               <li>Turm anklicken: <b>U</b> aufwerten · <b>V</b> verkaufen · <b>F</b> Forschung · <b>N</b> bereit für nächste Welle</li>
               <li>Kamera: <b>Pfeiltasten</b>, Bildschirmrand, <b>rechte/mittlere Maustaste</b> ziehen, <b>Mausrad</b> zoomen, <b>Leertaste</b> = eigener Abschnitt</li>
               <li><b>Alt+Klick</b> Ping für alle · <b>Enter</b> Chat · <b>Tab</b> Punktestand</li>
+              <li><b>P</b> Pause · <b>💾</b> Spiel speichern · Spielstände lädt der Host hier in der Lobby</li>
             </ul>
             <h3>Schadenstabelle</h3>
             ${damageTableHtml()}
@@ -66,6 +69,10 @@ export class LobbyUI {
             </div>
             <div class="info muted" style="margin-top:6px;font-size:13px"></div>
             <div class="muted" style="margin-top:6px;font-size:13px">🏆 Rekord: Welle <span class="hs">0</span></div>
+          </div>
+          <div class="panel saves-panel" style="margin-top:16px">
+            <h3 style="margin-top:0">💾 Spielstände</h3>
+            <ul class="save-list"></ul>
           </div>
           <div class="panel" style="margin-top:16px">
             <h3 style="margin-top:0">Chat</h3>
@@ -138,6 +145,38 @@ export class LobbyUI {
     else if (isHost) info = waiting.length ? `Warte auf: ${waiting.map((p) => esc(p.name)).join(', ')}` : 'Alle bereit – du kannst starten!';
     else info = 'Der Host 👑 startet das Spiel.';
     this.q('.info').innerHTML = info;
+    this.renderSaves(msg, isHost);
+  }
+
+  private renderSaves(msg: LobbyMsg, isHost: boolean) {
+    const list = this.q('.save-list');
+    if (!msg.saves.length) {
+      list.innerHTML = '<li class="muted">Noch keine Spielstände. Im Spiel mit 💾 speichern.</li>';
+      return;
+    }
+    list.innerHTML = msg.saves.map((s) => `
+      <li data-id="${esc(s.id)}">
+        <div style="flex:1">
+          <b>${esc(s.name)}</b><br>
+          <span class="muted" style="font-size:12px">Welle ${s.wave} · ❤ ${s.lives} · ${new Date(s.date).toLocaleString()}<br>
+          ${s.players.map((p) => `${CLASS_ICONS[p.classId] ?? ''} ${esc(p.name)}`).join(', ')}</span>
+        </div>
+        ${isHost ? '<button class="load primary">Laden</button><button class="del" title="Löschen">🗑</button>' : ''}
+      </li>`).join('') + (isHost ? '' : '<li class="muted" style="font-size:12px">Nur der Host 👑 kann Spielstände laden.</li>');
+    list.querySelectorAll<HTMLElement>('li[data-id]').forEach((li) => {
+      const id = li.dataset.id!;
+      const name = msg.saves.find((s) => s.id === id)?.name ?? id;
+      li.querySelector<HTMLButtonElement>('.load')?.addEventListener('click', () => this.actions.load(id));
+      const del = li.querySelector<HTMLButtonElement>('.del');
+      del?.addEventListener('click', () => {
+        // Two-step confirmation: the first click arms the button.
+        if (del.dataset.armed) { this.actions.deleteSave(id); return; }
+        del.dataset.armed = '1';
+        del.textContent = 'Löschen?';
+        del.title = `„${name}“ endgültig löschen`;
+        setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = '🗑'; } }, 3000);
+      });
+    });
   }
 
   addChat(name: string, color: number, text: string) {

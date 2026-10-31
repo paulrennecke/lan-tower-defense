@@ -78,9 +78,20 @@ export interface Snapshot {
   wave: number;
   timer: number;        // seconds until next wave, -1 while spawning
   lives: number;
+  /** Name of the player who paused the game, null while running. */
+  paused: string | null;
   enemies: EnemySnap[];
   players: PlayerStats[];
   fx: Fx[];
+}
+
+export interface SaveInfo {
+  id: string;
+  name: string;
+  date: string;
+  wave: number;
+  lives: number;
+  players: { name: string; classId: string }[];
 }
 
 export type ClientMsg =
@@ -97,11 +108,15 @@ export type ClientMsg =
   | { t: 'research'; id: string }
   | { t: 'callWave'; ready: boolean }
   | { t: 'ping'; x: number; y: number }
+  | { t: 'pause'; paused: boolean }
+  | { t: 'save'; name: string }
+  | { t: 'load'; id: string }
+  | { t: 'deleteSave'; id: string }
   | { t: 'backToLobby' };
 
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string }
-  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number }
+  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[] }
   | { t: 'game'; state: FullState }
   | Snapshot
   | { t: 'tower'; tower: TowerInfo }

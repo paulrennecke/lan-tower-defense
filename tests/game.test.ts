@@ -164,3 +164,64 @@ describe('Game simulation', () => {
     expect(r.lives).toBeGreaterThan(30);
   });
 });
+
+describe('Pause, save & load', () => {
+  it('pause freezes the simulation', () => {
+    const g = mkGame(['human']);
+    g.startWave();
+    run(g, 2);
+    g.paused = 'P0';
+    const snap = JSON.stringify(g.enemies.map((e) => [e.id, e.d, e.hp]));
+    const t = g.time;
+    run(g, 5);
+    expect(g.time).toBe(t);
+    expect(JSON.stringify(g.enemies.map((e) => [e.id, e.d, e.hp]))).toBe(snap);
+    expect(g.snapshot().paused).toBe('P0');
+    g.paused = null;
+    run(g, 1);
+    expect(g.time).toBeGreaterThan(t);
+  });
+
+  it('round-trips a running game through JSON', () => {
+    const g = mkGame(['human', 'undead']);
+    g.players.get('p0')!.gold = 10000;
+    g.players.get('p1')!.gold = 10000;
+    g.players.get('p0')!.lumber = 10;
+    g.research('p0', 'h_r_mage');
+    for (const d of [4, 9, 14]) { const c = cellNear(g, 'p0', d); g.build('p0', 'h_watch', c.cx, c.cy); }
+    const c1 = cellNear(g, 'p1', 6);
+    g.build('p1', 'u_plague', c1.cx, c1.cy);
+    g.upgrade('p0', [...g.towers.keys()][0]);
+    g.startWave();
+    run(g, 4);
+    expect(g.enemies.length + g.pendingSpawns).toBeGreaterThan(0);
+
+    const data = JSON.parse(JSON.stringify(g.toSave()));
+    const r = Game.fromSave(data, {}, 'Host');
+    expect(r.paused).toBe('Host');
+    expect(r.time).toBe(g.time);
+    expect(r.wave).toBe(g.wave);
+    expect(r.lives).toBe(g.lives);
+    expect(r.sectionOwners).toEqual(g.sectionOwners);
+    expect(r.fullState('p0', new Map(), 0).towers).toEqual(g.fullState('p0', new Map(), 0).towers);
+    expect(r.playerStats().map((p) => ({ ...p, ready: false }))).toEqual(g.playerStats().map((p) => ({ ...p, ready: false })));
+    const { fx: _a, paused: _b, ...rs } = r.snapshot();
+    const { fx: _c, paused: _d, ...gs } = g.snapshot();
+    expect(rs).toEqual(gs);
+    expect(r.pendingSpawns).toBe(g.pendingSpawns);
+    expect([...r.players.values()].every((p) => !p.connected)).toBe(true);
+
+    // Occupancy and stats are rebuilt: building on an occupied cell fails, the restored game keeps running.
+    const t = [...r.towers.values()][0];
+    expect(r.build(t.owner, t.def, t.cx, t.cy)).toMatch(/belegt/);
+    r.setConnected('p0', true);
+    r.paused = null;
+    run(r, 30);
+    expect(r.time).toBeGreaterThan(g.time + 29);
+    expect(r.players.get('p0')!.kills).toBeGreaterThan(0);
+  });
+
+  it('rejects invalid saves', () => {
+    expect(() => Game.fromSave({ version: 99 } as never)).toThrow(/Spielstand/);
+  });
+});

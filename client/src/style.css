@@ -144,5 +144,14 @@ table.dmg th { color: var(--gold); background: #1f1a12; }
 .research-item .desc { flex: 1; font-size: 13px; }
 .research-item .lvl { color: var(--gold); font-size: 12px; }
 .bottom-right { position: absolute; bottom: 10px; right: 10px; display: flex; gap: 6px; }
+.bottom-right button.active { background: #6a5320; }
+.pause-box {
+  position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%); text-align: center; padding: 18px 28px; z-index: 20;
+}
+.pause-box h2 { margin: 0 0 4px; font-family: Georgia, serif; font-size: 34px; color: var(--gold); letter-spacing: 4px; }
+.pause-box button { margin-top: 10px; }
+#game.paused > canvas { filter: grayscale(0.6) brightness(0.75); }
+.save-list { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow: auto; }
+.save-list li { display: flex; align-items: center; gap: 6px; padding: 6px; border-bottom: 1px solid #2a2218; font-size: 14px; }
 .disconnected { position: fixed; top: 0; left: 0; right: 0; background: #a02020; color: #fff; text-align: center; padding: 6px; z-index: 100; font-weight: 600; }
 .ready-list { font-size: 12px; color: var(--muted); }

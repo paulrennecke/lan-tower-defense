@@ -42,6 +42,8 @@ export class Entities {
   private snapInterval = 100;
   readonly fx: FxManager;
   onKillGold?: (gold: number) => void;
+  /** Freezes enemy walk animations while the game is paused. */
+  paused = false;
 
   constructor(private world: World, private colorOf: (pid: string) => number) {
     this.fx = new FxManager(world.scene);
@@ -257,7 +259,7 @@ export class Entities {
     for (const e of this.enemies.values()) {
       e.renderD = e.fromD + (e.toD - e.fromD) * k;
       this.placeEnemy(e);
-      if (!(e.flags & EF_STUN)) e.model.userData.anim(t);
+      if (!(e.flags & EF_STUN) && !this.paused) e.model.userData.anim(t);
       const r = Math.max(0, e.hp / e.maxHp);
       const w = e.barFg.userData.w as number;
       e.barFg.scale.x = Math.max(0.001, w * r);
