@@ -1,7 +1,7 @@
-# ❄ Wintermaul TD – LAN Tower Defense
+# ❄ LAN TD
 
 Kooperatives 3D-Maze-Tower-Defense im Browser für **bis zu 16 Spieler im lokalen Netzwerk**, nachempfunden der
-Warcraft-III-Karte **Wintermaul TD**: verschneite Karte, Gegner aus mehreren Portalen im Norden, ein Tor im Süden –
+Warcraft-III-Karte **Wintermaul TD** („LAN TD“): verschneite Karte, Gegner aus mehreren Portalen im Norden, ein Tor im Süden –
 und kein fester Weg, sondern **Labyrinthe (Mazes)**, die die Spieler selbst bauen.
 
 Ein Rechner startet den Server, alle anderen öffnen einfach die angezeigte Adresse im Browser – keine Installation
@@ -34,17 +34,15 @@ Beim ersten Start fragt Windows meist nach einer Freigabe für Node.js – **„
 Falls Mitspieler trotzdem nicht verbinden können (als Administrator ausführen):
 
 ```powershell
-netsh advfirewall firewall add rule name="LAN Tower Defense" dir=in action=allow protocol=TCP localport=3000
+netsh advfirewall firewall add rule name="LAN TD" dir=in action=allow protocol=TCP localport=3000
 ```
 
 ## Spielablauf
 
-1. **Lobby:** Namen eingeben, eine von 6 Klassen wählen, „Bereit“ klicken. Der Host (👑) wählt die **Karte** und startet das Spiel.
-   Außerdem legt der Host die **Spieloptionen** fest:
-   - **Nur in eigenen Bauzonen bauen** (Standard an) – ausgeschaltet darf jeder in allen Bauzonen bauen,
-     auch in Zonen ohne Besitzer.
-   - **Laufweg der Gegner anzeigen** (Standard an) – ausgeschaltet gibt es keine rote Wegvorschau und keine
-     Weglängen-Anzeige (für erfahrene Spieler).
+1. **Lobby:** Jeder Spieler bekommt automatisch eine **zufällige Klasse** (änderbar), klickt „Bereit“ – der Host (👑) wählt die
+   **Karte** und startet das Spiel. Auf der großen Kartenvorschau kann jeder ein **✖ setzen**, um den anderen zu zeigen,
+   wo er gerne spielen würde (die Kamera startet dort). Es gibt **keine festen Bereiche**: jeder darf überall bauen.
+   Der Host kann Spieler, die nicht „Bereit“ klicken, mit ✖ aus der Lobby **entfernen** (kicken).
 2. **Karten** (Northrend-Look: verschneite Plateaus mit Felskanten, Eispfade, zugefrorenes Wasser):
    - **Wintermaul X9** – die klassische Karte: drei Portale im Norden, darunter ein breites Mittelfeld mit
      Eiskanälen, der große Felsgraben (∩) zwingt die Gegner links oder rechts herum, das Tor liegt im See im Süden.
@@ -52,25 +50,24 @@ netsh advfirewall firewall add rule name="LAN Tower Defense" dir=in action=allow
    - **Nordend (4 Spuren)** – vier getrennte Spuren zwischen Eisklippen, unten ein gemeinsamer Trichter zum Tor.
    - **Zwillingsgletscher** – zwei Spuren biegen nach innen ab und vereinen sich zu einer Schlucht nach Süden.
 
-   Jede Karte hat **16 Bauzonen**. Je nach Spielerzahl sind 1–4 Portale aktiv (z. B. X9: 1 Spieler = Mitte,
-   2 Spieler = links/rechts, ab 3 alle drei). Jedes aktive Portal schickt die **komplette Welle**; die Lebenspunkte
-   skalieren mit der Spielerzahl pro Spur. Zonen inaktiver Spuren bleiben leer, gemeinsame Zonen (z. B. der untere
-   Teil von X9) werden immer verteilt.
+   Je nach Spielerzahl sind 1–4 Portale aktiv (z. B. X9: 1 Spieler = Mitte, 2 Spieler = links/rechts, ab 3 alle drei).
+   Jedes aktive Portal schickt die **komplette Welle**; die Lebenspunkte der Gegner skalieren mit der Spielerzahl pro Spur.
 3. **Mazing:** Es gibt keinen festen Pfad. Bodengegner laufen immer den kürzesten Weg um die Türme herum. Mit billigen
    **Mauerblöcken** (5 Gold, Taste 1) baut man Wände mit Lücken, sodass die Gegner Schlangenlinien laufen müssen.
    - Die **rote gestrichelte Linie** zeigt den aktuellen Weg, im Baumenü steht die **Weglänge** je Spur.
    - Den Weg komplett zu **blockieren** ist nicht erlaubt (das Bau-Feld wird rot). Auch auf Gegnern kann man nicht bauen.
-   - **Flieger** ignorieren das Labyrinth und fliegen direkt zum Tor.
+   - **Flieger** ignorieren Türme und fliegen über Wasser, **umfliegen aber Felsen und Hügel** auf dem Weg zum Tor.
 4. **40 Wellen** mit immer stärkeren Gegnern – alle 10 Wellen ein **Boss**. Danach geht es im **Endlos-Modus**
-   weiter; der Rekord (erreichte Welle) wird gespeichert.
+   weiter; der **Rekord** (erreichte Welle) wird **pro Karte** gespeichert.
 5. Durchgelassene Gegner kosten **gemeinsame Leben** (50, +10 je weiterer aktiver Spur). Bei 0 ist das Spiel verloren.
 
 ### Wirtschaft
 
-- **Gold** ist pro Spieler (Start: 450). Kills bringen allen Verteidigern der jeweiligen Spur Gold – hilft ein Turm
-  aus einer anderen Spur aus, bekommt dessen Besitzer das Kopfgeld ebenfalls.
+- **Gold** ist pro Spieler (Start: 450). Jeder Kill bringt **allen** Spielern Gold (geteilt durch die Zahl der aktiven Spuren,
+  damit das Einkommen nicht von der Kartenbelegung abhängt).
+- **Gold senden:** Im Menü (☰ → 💸) kann jeder einem Mitspieler Gold schicken.
 - Zu Beginn jeder Welle gibt es Einkommen (+ Goblin-Bank/Investitionen) und **Holz**.
-- **Holz** braucht man für Forschung und die Ultimate-Türme. Besiegte Bosse geben den Verteidigern ihrer Spur +2 Holz.
+- **Holz** braucht man für Forschung und die Ultimate-Türme. Besiegte Bosse geben allen +2 Holz.
 - Verkaufen erstattet 75 % der Investition.
 
 ### Kampfsystem (wie WC3)
@@ -115,19 +112,20 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **U** / **V** | Ausgewählten Turm aufwerten / verkaufen |
 | **F** | Forschung |
 | **N** | Bereit für die nächste Welle (wenn alle bereit sind, startet sie in 3 s) |
-| **Pfeiltasten**, Bildschirmrand, **rechte/mittlere Maustaste ziehen** | Kamera bewegen |
+| **WASD / Pfeiltasten**, Bildschirmrand, **rechte/mittlere Maustaste ziehen** | Kamera bewegen |
 | **Mausrad** | Zoomen |
-| **Leertaste** | Zu eigenen Bauzonen springen |
+| **Leertaste** | Kamera zu den Portalen und zum Tor |
 | **Alt + Klick** | Ping auf der Karte für alle |
 | **Enter** | Chat |
 | **Tab** (halten) | Punktestand |
-| **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauzonen-Linien an/aus**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
+| **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauraster an/aus**, **Gold senden**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
 | **P** | Spiel pausieren / fortsetzen (jeder Spieler) |
 | Menü → 💾 | Spiel speichern |
 | Menü → 🚪 | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |
 
 Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich die Zielwahl einstellen
-(Vorderster, Hinterster, Stärkster, Schwächster, Nächster).
+(Vorderster, Hinterster, Stärkster, Schwächster, Nächster). Die Aufwerten-/Verkaufen-Knöpfe haben feste Größe und Position;
+beim Verkaufen direkt nach dem Aufwerten wird ein versehentlicher Doppelklick ignoriert.
 
 ### Pause, Speichern & Laden
 
@@ -139,11 +137,20 @@ Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich d
   Platz mit **gleichem Namen**, die übrigen Plätze werden der Reihe nach vergeben. Klassen kommen aus dem Spielstand.
   Unbesetzte Plätze übernehmen später beitretende Spieler automatisch. Ein geladenes Spiel startet pausiert.
 
-### Verbindung & Zuschauer
+### Verbindung, Nachjoinen & Zuschauer
 
 - Bei einem Verbindungsabbruch (oder Neuladen im selben Tab) verbindet sich der Client automatisch neu und übernimmt
   wieder seinen Spieler – Türme und Gold bleiben erhalten.
-- Wer einem laufenden Spiel beitritt (oder Spieler 17+), schaut zu und ist in der nächsten Runde dabei.
+- **Türme getrennter Spieler gehören allen:** Solange der Besitzer nicht verbunden ist, darf jeder sie aufwerten, verkaufen
+  und die Zielwahl ändern.
+- **Nachjoinen:** Wer einem laufenden Spiel beitritt, sieht zuerst zu und kann im Baumenü eine Klasse wählen und über
+  „⚔ Mitspielen“ einsteigen. Neue Spieler starten mit dem durchschnittlichen Gold der anderen; die Gegner werden mit der
+  Spielerzahl etwas stärker. (Beim Laden eines Spielstands übernehmen neue Spieler freie Plätze automatisch.)
+
+### Statistik am Spielende
+
+Zeit, Karte, Leben, besiegte Gegner/Bosse, Gesamtschaden, gebaute/stehende Türme, stärkster Turm, am häufigsten besiegte
+und durchgelassene Gegner sowie pro Spieler Kills, Schaden, Türme, Aufwertungen, verdientes und gesendetes Gold.
 
 ## Technik
 

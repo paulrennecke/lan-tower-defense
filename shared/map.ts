@@ -30,8 +30,10 @@ export let SPAWNS: { x: number; y: number }[] = [];
 export let GATE = { x: 0, y: 0, rot: 0 };
 /** Centre of every zone (logic coordinates). */
 export let ZONE_CENTER: { x: number; y: number }[] = [];
-/** Zone of each lane that is closest to the exit (takes the blame for leaks). */
-export let LANE_LAST_ZONE: number[] = [];
+/** Cells flyers may cross: everything except rock (water is fine, towers do not block them). */
+export let FLY_PASSABLE = new Uint8Array(0);
+/** Distance to the exit for flyers – they fly around cliffs but over towers and water. */
+export let FLY_FLOW: Float32Array = new Float32Array(0);
 
 export const cellIndex = (x: number, y: number) => y * MAP_W + x;
 export const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
@@ -71,67 +73,21 @@ export function setActiveMap(id: string) {
     { d: ex, x: -1.2, y: ey, rot: -Math.PI / 2 }, { d: MAP_W - ex, x: MAP_W + 1.2, y: ey, rot: Math.PI / 2 },
   ].sort((a, b) => a.d - b.d);
   GATE = { x: edges[0].x, y: edges[0].y, rot: edges[0].rot };
-  const flow = computeFlow(new Uint8Array(n));
-  LANE_LAST_ZONE = SPAWNS.map((_, l) => {
-    let best = -1, bestD = Infinity;
-    for (let z = 0; z < SECTION_COUNT; z++) {
-      if (def.zoneHome[z] !== l || !sum[z].n) continue;
-      const c = ZONE_CENTER[z];
-      const d = flow[cellIndex(Math.floor(c.x), Math.floor(c.y))];
-      const dd = Number.isFinite(d) ? d : 1e6;
-      if (dd < bestD) { bestD = dd; best = z; }
-    }
-    return best;
-  });
+  FLY_PASSABLE = new Uint8Array(n);
+  for (let i = 0; i < n; i++) FLY_PASSABLE[i] = WALKABLE[i] | WATER[i];
+  FLY_FLOW = computeFlow(new Uint8Array(n), FLY_PASSABLE);
 }
 
 export function isBuildable(x: number, y: number): boolean {
   return inMap(x, y) && SECTION_OF[cellIndex(x, y)] >= 0;
 }
 
-/**
- * Deals the zones to the players. Every player is attached to one active lane (round-robin); a zone goes to the
- * players of its home lane. Shared zones of inactive lanes go to the nearest active lane. '' = unused zone.
- */
-export function assignSections(playerIds: string[]): string[] {
-  const def = MAP_DEF;
-  const lanes = def.lanesFor(playerIds.length);
-  const playersOf = new Map<number, string[]>(lanes.map((l) => [l, [] as string[]]));
-  playerIds.forEach((id, i) => playersOf.get(lanes[i % lanes.length])!.push(id));
-  const counter = new Map<number, number>();
-  const owners: string[] = [];
-  for (let s = 0; s < SECTION_COUNT; s++) {
-    let lane = def.zoneHome[s];
-    if (!lanes.includes(lane)) {
-      if (!def.shared[s]) { owners.push(''); continue; }
-      lane = [...lanes].sort((a, b) => Math.abs(a - lane) - Math.abs(b - lane) || a - b)[0];
-    }
-    const list = playersOf.get(lane)!;
-    const k = counter.get(lane) ?? 0;
-    counter.set(lane, k + 1);
-    owners.push(list[k % list.length]);
-  }
-  // Nobody may end up without a zone: take one from the player with the most zones.
-  for (const id of playerIds) {
-    if (owners.includes(id)) continue;
-    const count = (p: string) => owners.filter((o) => o === p).length;
-    const rich = playerIds.filter((p) => count(p) > 1).sort((a, b) => count(b) - count(a))[0];
-    if (!rich) break;
-    owners[owners.lastIndexOf(rich)] = id;
-  }
-  return owners;
+/** Lanes (spawns) that receive creeps for a number of players. */
+export function activeLanes(players: number): number[] {
+  return MAP_DEF.lanesFor(players);
 }
 
-/** Lanes that receive creeps (lanes with at least one owned, non-shared home zone). */
-export function lanesOf(sectionOwners: string[]): number[] {
-  const lanes: number[] = [];
-  for (let l = 0; l < LANES; l++) {
-    if (sectionOwners.some((o, s) => o && MAP_DEF.zoneHome[s] === l && !MAP_DEF.shared[s])) lanes.push(l);
-  }
-  return lanes;
-}
-
-/** Zones that defend a lane (home lane or shared zones assigned to it). */
+/** Zones that lie in a lane (used by bots to plan mazes). */
 export function laneZones(lane: number): number[] {
   const zones: number[] = [];
   for (let s = 0; s < SECTION_COUNT; s++) if (MAP_DEF.zoneHome[s] === lane) zones.push(s);
@@ -145,16 +101,16 @@ const DIRS: [number, number, number][] = [
   [1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, SQRT2], [1, -1, SQRT2], [-1, 1, SQRT2], [-1, -1, SQRT2],
 ];
 
-const free = (blocked: Uint8Array, x: number, y: number) => inMap(x, y) && WALKABLE[cellIndex(x, y)] === 1 && !blocked[cellIndex(x, y)];
+const free = (blocked: Uint8Array, x: number, y: number, ok: Uint8Array) => inMap(x, y) && ok[cellIndex(x, y)] === 1 && !blocked[cellIndex(x, y)];
 
 /** Diagonal steps are only allowed if both adjacent orthogonal cells are free (no corner cutting). */
-function canStep(blocked: Uint8Array, x: number, y: number, dx: number, dy: number) {
-  if (!free(blocked, x + dx, y + dy)) return false;
-  return dx === 0 || dy === 0 || (free(blocked, x + dx, y) && free(blocked, x, y + dy));
+function canStep(blocked: Uint8Array, x: number, y: number, dx: number, dy: number, ok: Uint8Array) {
+  if (!free(blocked, x + dx, y + dy, ok)) return false;
+  return dx === 0 || dy === 0 || (free(blocked, x + dx, y, ok) && free(blocked, x, y + dy, ok));
 }
 
 /** Distance (in cells) from every cell to the nearest exit. Infinity = unreachable. `blocked` marks towers. */
-export function computeFlow(blocked: Uint8Array): Float32Array {
+export function computeFlow(blocked: Uint8Array, passable: Uint8Array = WALKABLE): Float32Array {
   const dist = new Float32Array(MAP_W * MAP_H).fill(Infinity);
   // Binary heap of [dist, index].
   const heapD: number[] = [], heapI: number[] = [];
@@ -194,7 +150,7 @@ export function computeFlow(blocked: Uint8Array): Float32Array {
     const x = i % MAP_W, y = (i - x) / MAP_W;
     for (const [dx, dy, c] of DIRS) {
       // Steps are symmetric, so walking backwards from the exit uses the same rule.
-      if (!canStep(blocked, x, y, dx, dy)) continue;
+      if (!canStep(blocked, x, y, dx, dy, passable)) continue;
       const j = cellIndex(x + dx, y + dy);
       const nd = Math.fround(d + c);
       if (nd < dist[j]) { dist[j] = nd; push(nd, j); }
@@ -204,10 +160,10 @@ export function computeFlow(blocked: Uint8Array): Float32Array {
 }
 
 /** Next cell (index) to walk to from (cx, cy), or -1 if there is none. */
-export function nextCell(dist: Float32Array, blocked: Uint8Array, cx: number, cy: number): number {
+export function nextCell(dist: Float32Array, blocked: Uint8Array, cx: number, cy: number, passable: Uint8Array = WALKABLE): number {
   let best = -1, bestD = dist[cellIndex(cx, cy)];
   for (const [dx, dy] of DIRS) {
-    if (!canStep(blocked, cx, cy, dx, dy)) continue;
+    if (!canStep(blocked, cx, cy, dx, dy, passable)) continue;
     const j = cellIndex(cx + dx, cy + dy);
     if (dist[j] < bestD) { bestD = dist[j]; best = j; }
   }
@@ -220,17 +176,57 @@ export function spawnsConnected(dist: Float32Array): boolean {
 }
 
 /** Cell route (logic coordinates of cell centres) from a point to the exit – used for previews and bots. */
-export function traceRoute(dist: Float32Array, blocked: Uint8Array, x: number, y: number, max = 2000): { x: number; y: number }[] {
+export function traceRoute(dist: Float32Array, blocked: Uint8Array, x: number, y: number, max = 2000, passable: Uint8Array = WALKABLE): { x: number; y: number }[] {
   let cx = Math.floor(x), cy = Math.floor(y);
   const pts = [{ x, y }];
   for (let n = 0; n < max; n++) {
     if (!inMap(cx, cy) || !Number.isFinite(dist[cellIndex(cx, cy)]) || dist[cellIndex(cx, cy)] === 0) break;
-    const j = nextCell(dist, blocked, cx, cy);
+    const j = nextCell(dist, blocked, cx, cy, passable);
     if (j < 0) break;
     cx = j % MAP_W; cy = (j - cx) / MAP_W;
     pts.push({ x: cx + 0.5, y: cy + 0.5 });
   }
   return pts;
+}
+
+/** True if a straight flight (with a little clearance to both sides) only crosses cells flyers can pass. */
+function flyClear(x0: number, y0: number, x1: number, y1: number): boolean {
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  if (len < 1e-6) return true;
+  const nx = -(y1 - y0) / len, ny = (x1 - x0) / len;
+  const n = Math.ceil(len / 0.15);
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    for (const off of [0, 0.3, -0.3]) {
+      const x = Math.floor(x0 + (x1 - x0) * t + nx * off), y = Math.floor(y0 + (y1 - y0) * t + ny * off);
+      if (!inMap(x, y) || !FLY_PASSABLE[cellIndex(x, y)]) return false;
+    }
+  }
+  return true;
+}
+
+let noBlock = new Uint8Array(0);
+
+/**
+ * Point a flyer at (x, y) should head for: the farthest point of its way around the cliffs that it can reach in
+ * a straight line (so it flies smoothly instead of cell by cell). Towers do not matter to flyers.
+ */
+export function flyTarget(x: number, y: number): { x: number; y: number; done: boolean } {
+  if (noBlock.length !== MAP_W * MAP_H) noBlock = new Uint8Array(MAP_W * MAP_H);
+  let cx = Math.floor(x), cy = Math.floor(y);
+  if (!inMap(cx, cy) || !Number.isFinite(FLY_FLOW[cellIndex(cx, cy)])) return { x: GATE.x, y: GATE.y, done: false };
+  if (EXIT[cellIndex(cx, cy)]) return { x: cx + 0.5, y: cy + 0.5, done: true };
+  const way: { x: number; y: number }[] = [];
+  for (let k = 0; k < 10; k++) {
+    const j = nextCell(FLY_FLOW, noBlock, cx, cy, FLY_PASSABLE);
+    if (j < 0) break;
+    cx = j % MAP_W; cy = (j - cx) / MAP_W;
+    way.push({ x: cx + 0.5, y: cy + 0.5 });
+    if (EXIT[j]) break;
+  }
+  if (!way.length) return { x: GATE.x, y: GATE.y, done: false };
+  for (let i = way.length - 1; i > 0; i--) if (flyClear(x, y, way[i].x, way[i].y)) return { ...way[i], done: false };
+  return { ...way[0], done: false };
 }
 
 export function routeLength(pts: { x: number; y: number }[]): number {

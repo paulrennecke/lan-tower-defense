@@ -1,5 +1,5 @@
 import { CLASSES, CLASS_BY_ID } from '../../../shared/data/classes';
-import { MAX_PLAYERS, type GameOptions, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
+import { MAX_PLAYERS, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
 import { CLASS_ICONS, TOWER_ICONS, damageTableHtml, esc, hex } from './format';
 import { MAPS, type MapDef } from '../../../shared/maps';
 
@@ -30,7 +30,8 @@ export interface LobbyActions {
   load(id: string): void;
   deleteSave(id: string): void;
   setMap(id: string): void;
-  setOptions(o: Partial<GameOptions>): void;
+  setPos(x: number, y: number): void;
+  kick(id: string): void;
 }
 
 type LobbyMsg = Extract<ServerMsg, { t: 'lobby' }>;
@@ -44,8 +45,8 @@ export class LobbyUI {
     this.el = document.createElement('div');
     this.el.id = 'lobby';
     this.el.innerHTML = `
-      <h1>❄ Wintermaul TD ❄</h1>
-      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil der Warcraft-III-Karte Wintermaul – bis zu ${MAX_PLAYERS} Spieler, 40 Wellen, danach Endlos-Modus</div>
+      <h1>❄ LAN TD ❄</h1>
+      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil von Wintermaul TD (Warcraft III) – bis zu ${MAX_PLAYERS} Spieler, 40 Wellen, danach Endlos-Modus</div>
       <div class="lobby-grid">
         <div>
           <div class="panel">
@@ -57,10 +58,8 @@ export class LobbyUI {
                 <div class="muted" style="font-size:12px">${esc(m.desc)}</div>
               </div>`).join('')}
             </div>
-            <div class="options">
-              <label><input type="checkbox" class="opt" data-opt="ownZonesOnly"> Nur in eigenen Bauzonen bauen</label>
-              <label><input type="checkbox" class="opt" data-opt="showRoute"> Laufweg der Gegner anzeigen</label>
-            </div>
+            <h3 style="margin:14px 0 4px">📍 Wo möchtest du spielen? <small class="muted">– klicke auf die Karte, um dein ✖ zu setzen</small></h3>
+            <canvas class="wish-map" width="440" height="440"></canvas>
           </div>
           <div class="panel" style="margin-top:16px">
             <h2 style="margin-top:0">Wähle deine Klasse</h2>
@@ -76,8 +75,8 @@ export class LobbyUI {
           <div class="panel help" style="margin-top:16px">
             <h2 style="margin-top:0">So wird gespielt</h2>
             <ul>
-              <li>Die Gegner kommen oben aus bis zu <b>vier Portalen</b> und laufen durch die verschneiten Spuren zum <b>Tor</b> im Süden. Jeder Spieler verteidigt farbig markierte <b>Bauzonen</b> einer Spur.</li>
-              <li><b>Es gibt keinen festen Weg:</b> Die Gegner nehmen immer den kürzesten Weg um eure Türme herum. Baut <b>Labyrinthe</b> (Mazes) mit billigen <b>Mauerblöcken</b> (Taste 1, 5 Gold), damit sie lange unter Beschuss laufen. Die rote Linie zeigt den aktuellen Weg.</li>
+              <li>Die Gegner kommen oben aus bis zu <b>vier Portalen</b> und laufen durch die verschneiten Spuren zum <b>Tor</b> im Süden. Jeder darf <b>überall</b> bauen – sprecht euch ab, wer wo verteidigt (setzt dazu oben euer ✖ auf die Karte).</li>
+              <li><b>Es gibt keinen festen Weg:</b> Die Gegner nehmen immer den kürzesten Weg um eure Türme herum. Baut <b>Labyrinthe</b> (Mazes) mit billigen <b>Mauerblöcken</b> (Taste 1, 5 Gold), damit sie lange unter Beschuss laufen. Die rote Linie zeigt den aktuellen Weg (im Menü abschaltbar). <b>Flieger</b> ignorieren Türme, umfliegen aber Felsen.</li>
               <li>Den Weg <b>komplett blockieren</b> geht nicht – es muss immer ein Durchgang bleiben. <b>Flieger</b> ignorieren das Labyrinth und fliegen direkt zum Tor.</li>
               <li>Kills bringen den Verteidigern der Spur Gold. Zu jeder Welle gibt es Einkommen und <b>Holz</b> für Forschung &amp; Ultimate-Türme.</li>
               <li>Durchgelassene Gegner kosten gemeinsame Leben. Bosse kosten viele Leben!</li>
@@ -87,7 +86,7 @@ export class LobbyUI {
             <ul>
               <li><b>1</b> Mauerblock · <b>2–7</b> Turm wählen · <b>Linksklick</b> bauen (<b>Shift</b> = mehrere) · <b>Rechtsklick/Esc</b> abbrechen</li>
               <li>Turm anklicken: <b>U</b> aufwerten · <b>V</b> verkaufen · <b>F</b> Forschung · <b>N</b> bereit für nächste Welle</li>
-              <li>Kamera: <b>Pfeiltasten</b>, Bildschirmrand, <b>rechte/mittlere Maustaste</b> ziehen, <b>Mausrad</b> zoomen, <b>Leertaste</b> = eigener Abschnitt</li>
+              <li>Kamera: <b>WASD / Pfeiltasten</b>, Bildschirmrand, <b>rechte/mittlere Maustaste</b> ziehen, <b>Mausrad</b> zoomen, <b>Leertaste</b> = Portale &amp; Tor ansehen</li>
               <li><b>Alt+Klick</b> Ping für alle · <b>Enter</b> Chat · <b>Tab</b> Punktestand</li>
               <li><b>P</b> Pause · <b>💾</b> Spiel speichern · Spielstände lädt der Host hier in der Lobby</li>
             </ul>
@@ -144,9 +143,45 @@ export class LobbyUI {
       drawMapPreview(card.querySelector('canvas')!, MAPS.find((m) => m.id === card.dataset.map)!);
       card.onclick = () => { if (this.isHost) actions.setMap(card.dataset.map!); };
     });
-    this.el.querySelectorAll<HTMLInputElement>('.opt').forEach((box) => {
-      box.onchange = () => actions.setOptions({ [box.dataset.opt!]: box.checked });
-    });
+    const wish = this.q<HTMLCanvasElement>('.wish-map');
+    wish.onclick = (e) => {
+      if (this.me?.spectator) return;
+      const r = wish.getBoundingClientRect();
+      const def = MAPS.find((m) => m.id === this.mapId);
+      if (!def) return;
+      // The map is drawn centred and scaled to fit; convert the click back to 0..1 map coordinates.
+      const sc = Math.min(wish.width / def.w, wish.height / def.h);
+      const px = ((e.clientX - r.left) / r.width) * wish.width, py = ((e.clientY - r.top) / r.height) * wish.height;
+      const ox = (wish.width - def.w * sc) / 2, oy = (wish.height - def.h * sc) / 2;
+      actions.setPos(Math.min(1, Math.max(0, (px - ox) / (def.w * sc))), Math.min(1, Math.max(0, (py - oy) / (def.h * sc))));
+    };
+  }
+
+  private mapId = '';
+  private players: LobbyPlayer[] = [];
+
+  /** Big map preview with the ✖ marks of all players. */
+  private drawWishMap() {
+    const cv = this.q<HTMLCanvasElement>('.wish-map');
+    const def = MAPS.find((m) => m.id === this.mapId);
+    if (!def) return;
+    drawMapPreview(cv, def);
+    const ctx = cv.getContext('2d')!;
+    const sc = Math.min(cv.width / def.w, cv.height / def.h);
+    const ox = (cv.width - def.w * sc) / 2, oy = (cv.height - def.h * sc) / 2;
+    ctx.font = 'bold 12px sans-serif';
+    for (const p of this.players) {
+      if (!p.pos) continue;
+      const x = ox + p.pos.x * def.w * sc, y = oy + p.pos.y * def.h * sc;
+      ctx.lineWidth = 6; ctx.strokeStyle = '#000'; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x - 8, y - 8); ctx.lineTo(x + 8, y + 8); ctx.moveTo(x + 8, y - 8); ctx.lineTo(x - 8, y + 8); ctx.stroke();
+      ctx.lineWidth = 3.5; ctx.strokeStyle = hex(p.color);
+      ctx.beginPath(); ctx.moveTo(x - 8, y - 8); ctx.lineTo(x + 8, y + 8); ctx.moveTo(x + 8, y - 8); ctx.lineTo(x - 8, y + 8); ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = '#000'; ctx.fillStyle = '#fff';
+      const tw = ctx.measureText(p.name).width;
+      const tx = Math.min(cv.width - tw - 2, Math.max(2, x - tw / 2));
+      ctx.strokeText(p.name, tx, y + 24); ctx.fillText(p.name, tx, y + 24);
+    }
   }
 
   private isHost = false;
@@ -168,6 +203,9 @@ export class LobbyUI {
     const active = msg.players.filter((p) => !p.spectator);
     this.q('.count').textContent = `(${active.length}/${MAX_PLAYERS})`;
     this.q('.hs').textContent = String(msg.highscore);
+    this.mapId = msg.map;
+    this.players = msg.players;
+    this.drawWishMap();
     if (this.me?.classId && this.me.classId !== this.selectedClass) this.showClass(this.me.classId);
     this.q('.player-list').innerHTML = msg.players.map((p) => `
       <li style="opacity:${p.connected ? 1 : 0.45}">
@@ -175,7 +213,11 @@ export class LobbyUI {
         <span>${esc(p.name)}${p.id === msg.hostId ? ' 👑' : ''}${p.id === you ? ' <span class="muted">(du)</span>' : ''}</span>
         <span class="cls">${p.spectator ? 'Zuschauer' : p.classId ? CLASS_ICONS[p.classId] + ' ' + esc(CLASS_BY_ID[p.classId].name) : '—'}</span>
         <span class="rdy">${p.spectator ? '' : p.ready || p.id === msg.hostId ? '<span class="good">✔ bereit</span>' : '<span class="muted">wartet</span>'}</span>
+        ${msg.hostId === you && p.id !== you && msg.phase === 'lobby' ? `<button class="kick" data-id="${p.id}" title="Spieler entfernen">✖</button>` : ''}
       </li>`).join('');
+    this.el.querySelectorAll<HTMLButtonElement>('.kick').forEach((b) => {
+      b.onclick = () => { if (confirm('Diesen Spieler aus der Lobby entfernen?')) this.actions.kick(b.dataset.id!); };
+    });
     const isHost = msg.hostId === you;
     this.isHost = isHost;
     this.el.querySelectorAll<HTMLElement>('.map-card').forEach((card) => {
@@ -183,10 +225,6 @@ export class LobbyUI {
       card.classList.toggle('clickable', isHost);
     });
     this.q('.map-hint').textContent = isHost ? '– wähle die Karte' : '– der Host wählt die Karte';
-    this.el.querySelectorAll<HTMLInputElement>('.opt').forEach((box) => {
-      box.checked = msg.options[box.dataset.opt as keyof GameOptions];
-      box.disabled = !isHost;
-    });
     const readyBtn = this.q<HTMLButtonElement>('.ready');
     readyBtn.classList.toggle('hidden', isHost || !!this.me?.spectator);
     readyBtn.textContent = this.me?.ready ? 'Nicht bereit' : 'Bereit';

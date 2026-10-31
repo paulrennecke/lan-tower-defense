@@ -1,13 +1,14 @@
 import { ARMOR_NAMES } from '../../../shared/damage';
-import { CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/classes';
+import { CLASSES, CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/classes';
+import { MAPS } from '../../../shared/maps';
 import { ENEMY_BY_ID } from '../../../shared/data/enemies';
 import { VICTORY_WAVE, getWave } from '../../../shared/data/waves';
 import {
-  MAP_DEF, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, ZONE_CENTER, cellIndex, setActiveMap, computeFlow, isBuildable, lanesOf, routeLength,
+  GATE, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, cellIndex, setActiveMap, computeFlow, isBuildable, routeLength,
   spawnsConnected, traceRoute,
 } from '../../../shared/map';
 import {
-  DEFAULT_OPTIONS, TARGET_MODE_NAMES, type FullState, type GameOptions, type LobbyPlayer, type PlayerStats, type ServerMsg, type Snapshot, type TargetMode, type TowerInfo,
+  TARGET_MODE_NAMES, type FullState, type LobbyPlayer, type PlayerStats, type ServerMsg, type Snapshot, type TargetMode, type TowerInfo,
 } from '../../../shared/protocol';
 import { auraBuffs, effectiveStats } from '../../../shared/stats';
 import type { Net } from '../net';
@@ -25,7 +26,12 @@ export class GameView {
   private world: World;
   private ent: Entities;
   private players = new Map<string, CPlayer>();
-  private sectionOwners: string[] = [];
+  /** Lanes (spawns) that receive creeps. */
+  private lanes: number[] = [];
+  /** Where this player wished to play in the lobby (0..1 on the map). */
+  private wish: { x: number; y: number } | null = null;
+  private focusCycle = 0;
+  private lastUpgradeAt = 0;
   private you = '';
   private wave = 0;
   private lives = 0;
@@ -44,7 +50,6 @@ export class GameView {
   private clock = performance.now();
   private hostId: string | null = null;
   private paused: string | null = null;
-  private options: GameOptions = { ...DEFAULT_OPTIONS };
   /** Local display preferences (only this screen, stored in the browser). */
   private view = { route: localStorage.getItem('td-route') !== '0', zones: localStorage.getItem('td-zones') !== '0' };
   /** Client-side copy of the tower grid and flow field for route previews and the "don't block" check. */
@@ -78,7 +83,11 @@ export class GameView {
         <div class="build-grid"></div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung (F)</button>
-        <div class="muted h-spectator hidden" style="margin-top:6px">Du bist Zuschauer.</div>
+        <div class="h-spectator hidden" style="margin-top:6px">
+          <div class="muted">Du schaust zu. Steige mit einer Klasse ins laufende Spiel ein:</div>
+          <select class="j-class" style="width:100%;margin:6px 0">${CLASSES.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select>
+          <button class="primary j-join" style="width:100%">⚔ Mitspielen</button>
+        </div>
       </div>
       <div class="sel-panel panel hidden"></div>
       <div class="minimap panel"><canvas width="230" height="202"></canvas></div>
@@ -91,7 +100,8 @@ export class GameView {
           <button class="h-save">💾 Spiel speichern</button>
           <button class="h-score">📊 Punktestand <small>Tab</small></button>
           <button class="h-route">🧭 Laufweg: an</button>
-          <button class="h-zones">🔲 Bauzonen: an</button>
+          <button class="h-zones">🔲 Bauraster: an</button>
+          <button class="h-gift">💸 Gold senden</button>
           <button class="h-sound">🔊 Ton: an</button>
           <button class="h-quit hidden">🚪 Spiel beenden</button>
         </div>
@@ -114,6 +124,16 @@ export class GameView {
           <button class="q-cancel">Abbrechen</button><button class="q-nosave">Nicht speichern</button><button class="primary q-save">Speichern &amp; beenden</button>
         </div>
       </div></div>
+      <div class="overlay hidden o-gift"><div class="panel" style="min-width:380px">
+        <h2 style="margin-top:0">💸 Gold senden</h2>
+        <select class="g-to" style="width:100%"></select>
+        <div class="row" style="margin-top:8px;gap:6px">
+          <input type="number" class="g-amount" min="1" value="100" style="flex:1">
+          <button data-add="50">50</button><button data-add="100">100</button><button data-add="250">250</button><button data-add="all">Alles</button>
+        </div>
+        <div class="muted" style="margin-top:4px">Dein Gold: <b class="gold g-have"></b></div>
+        <div class="row" style="margin-top:10px;justify-content:flex-end;gap:6px"><button class="g-cancel">Abbrechen</button><button class="primary g-send">Senden</button></div>
+      </div></div>
       <div class="overlay hidden o-save"><div class="panel" style="min-width:420px">
         <h2 style="margin-top:0">💾 Spiel speichern</h2>
         <input class="save-name" maxlength="40" style="width:100%" placeholder="Name des Spielstands">
@@ -128,6 +148,16 @@ export class GameView {
     this.q('.h-research').onclick = () => this.toggleResearch();
     // Every menu entry closes the menu after its action.
     this.q('.h-menu').onclick = () => this.toggleMenu();
+    this.q('.h-gift').onclick = () => this.openGift();
+    this.q('.g-cancel').onclick = () => this.q('.o-gift').classList.add('hidden');
+    this.q('.g-send').onclick = () => this.sendGift();
+    this.q('.o-gift').querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) => {
+      b.onclick = () => { this.q<HTMLInputElement>('.g-amount').value = b.dataset.add === 'all' ? String(Math.floor(this.me?.gold ?? 0)) : b.dataset.add!; };
+    });
+    this.q<HTMLInputElement>('.g-amount').onkeydown = (e) => { if (e.key === 'Enter') this.sendGift(); else if (e.key === 'Escape') this.q('.o-gift').classList.add('hidden'); };
+    const jc = this.q<HTMLSelectElement>('.j-class');
+    jc.value = CLASSES[Math.floor(Math.random() * CLASSES.length)].id;
+    this.q('.j-join').onclick = () => this.net.send({ t: 'joinGame', classId: jc.value });
     this.q('.h-route').onclick = () => {
       this.view.route = !this.view.route;
       localStorage.setItem('td-route', this.view.route ? '1' : '0');
@@ -193,11 +223,10 @@ export class GameView {
     const mm = this.q<HTMLCanvasElement>('.minimap canvas');
     mm.height = Math.round((230 * MAP_H) / MAP_W);
     mm.style.height = mm.height + 'px';
-    this.options = { ...DEFAULT_OPTIONS, ...state.options };
     this.you = state.you;
     this.hostId = hostId;
     this.players = new Map(state.players.map((p) => [p.id, p]));
-    this.sectionOwners = state.sectionOwners;
+    this.lanes = state.lanes;
     this.wave = state.wave;
     this.lives = state.lives;
     this.highscore = state.highscore;
@@ -215,18 +244,26 @@ export class GameView {
     this.q('.o-over').classList.add('hidden');
     this.q('.o-research').classList.add('hidden');
     this.show(true);
-    this.focusOwnSection();
+    this.focusStart();
     this.updateHud(true);
   }
 
   setHost(hostId: string | null) { this.hostId = hostId; }
 
   /** Updates connection state and names from lobby broadcasts. */
-  updateLobby(players: LobbyPlayer[]) {
+  updateLobby(players: LobbyPlayer[], you: string) {
+    let changed = false;
     for (const lp of players) {
       const p = this.players.get(lp.id);
-      if (p) { p.connected = lp.connected; p.name = lp.name; }
+      if (p) {
+        if (p.connected !== lp.connected) changed = true;
+        p.connected = lp.connected;
+        p.name = lp.name;
+      }
+      if (lp.id === you) this.wish = lp.pos;
     }
+    // Towers of disconnected players can be used by everybody – refresh the selection panel.
+    if (changed && this.selected?.kind === 'tower') this.renderSelection();
   }
 
   show(v: boolean) {
@@ -254,6 +291,7 @@ export class GameView {
         this.refreshRoutes();
         if (this.selected?.kind === 'tower' && this.selected.id === msg.id) this.select(null);
         break;
+      case 'joined': this.players.set(msg.player.id, msg.player); break;
       case 'chat': this.chatLine(msg.from ? `<b style="color:${hex(msg.color)}">${esc(msg.name)}:</b> ${esc(msg.text)}` : `<span class="gold">${esc(msg.text)}</span>`); break;
       case 'event': this.onEvent(msg.kind, msg.text); break;
       case 'ping': {
@@ -302,13 +340,28 @@ export class GameView {
     sfx.play(msg.victory ? 'victory' : 'defeat');
     const o = this.q('.o-over');
     const isHost = this.hostId === this.you;
+    const sm = msg.summary;
+    const mapName = MAPS.find((m) => m.id === sm.map)?.name ?? sm.map;
+    const time = `${Math.floor(sm.time / 60)}:${String(sm.time % 60).padStart(2, '0')}`;
+    const tile = (icon: string, label: string, value: string) => `<div class="tile"><div class="ti">${icon}</div><div class="tv">${value}</div><div class="tl">${label}</div></div>`;
+    const tower = sm.topTower ? `${esc(TOWER_BY_ID[sm.topTower.def]?.levelNames[sm.topTower.level] ?? sm.topTower.def)} von ${esc(sm.topTower.owner)} (${fmt(sm.topTower.damage)} Schaden, ${sm.topTower.kills} Kills)` : '–';
+    const list = (l: [string, number][]) => (l.length ? l.map(([id, n]) => `${esc(ENEMY_BY_ID[id]?.name ?? id)} (${n}×)`).join(', ') : '–');
     const rows = [...msg.stats].sort((a, b) => b.damage - a.damage).map((s, i) => `
-      <tr><td>${i + 1}.</td><td><span class="dot" style="background:${hex(s.color)}"></span>${esc(s.name)}</td><td>${s.kills}</td><td>${fmt(s.damage)}</td></tr>`).join('');
+      <tr><td>${i + 1}.</td><td><span class="dot" style="background:${hex(s.color)}"></span>${esc(s.name)} <span class="muted">${CLASS_ICONS[s.classId] ?? ''}</span></td><td>${s.kills}</td><td>${fmt(s.damage)}</td><td>${s.towersBuilt}</td><td>${s.upgrades}</td><td>${fmt(s.goldEarned)}</td><td>${s.goldSent ? fmt(s.goldSent) : '–'}</td></tr>`).join('');
     o.querySelector('.panel')!.innerHTML = `
       <h1 style="text-align:center;margin:4px 0">${msg.victory ? '🏆 Ruhmreicher Kampf!' : '💀 Niederlage'}</h1>
-      <p style="text-align:center;font-size:18px">${msg.victory ? `Ihr habt alle ${VICTORY_WAVE} Wellen besiegt und im Endlos-Modus bis Welle <b>${msg.wave}</b> durchgehalten!` : `Die Basis ist gefallen. Überstanden: <b>${msg.wave}</b> Wellen.`}</p>
-      <p style="text-align:center" class="muted">🏆 Rekord: Welle ${msg.highscore}</p>
-      <table class="scoreboard" style="width:100%"><tr><th>#</th><th>Spieler</th><th>Kills</th><th>Schaden</th></tr>${rows}</table>
+      <p style="text-align:center;font-size:18px;margin:4px">${msg.victory ? `Ihr habt alle ${VICTORY_WAVE} Wellen besiegt und im Endlos-Modus bis Welle <b>${msg.wave}</b> durchgehalten!` : `Das Tor ist gefallen. Überstanden: <b>${msg.wave}</b> Wellen.`}</p>
+      <p style="text-align:center" class="${msg.newRecord ? 'gold' : 'muted'}">${msg.newRecord ? '🎉 Neuer Rekord' : '🏆 Rekord'} auf „${esc(mapName)}“: Welle ${msg.highscore}</p>
+      <div class="tiles">
+        ${tile('⏱', 'Spielzeit', time)}${tile('🗺', 'Karte', esc(mapName))}${tile('👥', 'Spieler', String(sm.players))}${tile('❤', 'Leben übrig / verloren', `${sm.livesLeft} / ${sm.livesLost}`)}
+        ${tile('☠', 'Gegner besiegt', fmt(sm.creepsKilled))}${tile('👑', 'Bosse besiegt', String(sm.bossesKilled))}${tile('💥', 'Gesamtschaden', fmt(sm.totalDamage))}${tile('🏗', 'Türme gebaut / stehen', `${sm.towersBuilt} / ${sm.towersAlive}`)}
+      </div>
+      <div class="muted" style="font-size:13px;margin:8px 0">
+        <div>⭐ Stärkster Turm: <b>${tower}</b></div>
+        <div>☠ Am häufigsten besiegt: ${list(sm.topKilled)}</div>
+        <div>🚪 Am häufigsten durchgekommen: ${list(sm.topLeaked)}</div>
+      </div>
+      <table class="scoreboard" style="width:100%"><tr><th>#</th><th>Spieler</th><th>Kills</th><th>Schaden</th><th>Türme</th><th>Upgrades</th><th>Gold verdient</th><th>Gold gesendet</th></tr>${rows}</table>
       <div style="text-align:center;margin-top:12px">${isHost ? '<button class="primary back">Zurück zur Lobby</button>' : '<span class="muted">Warte auf den Host…</span>'}</div>`;
     o.querySelector<HTMLButtonElement>('.back')?.addEventListener('click', () => this.net.send({ t: 'backToLobby' }));
     o.classList.remove('hidden');
@@ -420,6 +473,12 @@ export class GameView {
 
   // ------------------------------------------------------------------ selection
 
+  /** Own towers – and, while the owner is disconnected, everybody's towers – can be used. */
+  private canUse(info: TowerInfo): boolean {
+    if (this.spectator || this.over) return false;
+    return info.owner === this.you || this.players.get(info.owner)?.connected === false;
+  }
+
   private select(sel: Selection) {
     this.selected = sel;
     this.renderSelection();
@@ -438,28 +497,36 @@ export class GameView {
       const def = TOWER_BY_ID[info.def];
       const owner = this.players.get(info.owner);
       const eff = effectiveStats(info.def, info.level, owner?.research ?? {}, auraBuffs(info, [...this.ent.towers.values()].map((x) => x.info)));
-      const mine = info.owner === this.you && !this.over;
+      const mine = this.canUse(info);
+      const shared = mine && info.owner !== this.you;
       const maxLevel = def.maxLevel ?? 2;
       const next = info.level < maxLevel ? def.levels[info.level + 1] : null;
+      const upLabel = next
+        ? `⬆ Aufwerten (U)<small>${def.upCost[info.level]} 💰${def.upLumber[info.level] ? ` ${def.upLumber[info.level]} 🌲` : ''}</small>`
+        : 'Max. Stufe<small>&nbsp;</small>';
       panel.innerHTML = `
         <div class="portrait" style="border-color:${hex(owner?.color ?? 0xffffff)}">${TOWER_ICONS[def.shape]}</div>
         <div class="info">
           <h3>${esc(def.levelNames[info.level])} <span class="gold">${'★'.repeat(info.level + 1)}</span><span class="muted">${'☆'.repeat(maxLevel - info.level)}</span> <small class="muted">Stufe ${info.level + 1}/${maxLevel + 1}</small></h3>
-          <div class="muted" style="margin-bottom:4px"><span class="dot" style="background:${hex(owner?.color ?? 0xffffff)}"></span>${esc(owner?.name ?? '?')} · Kills: ${info.kills} · Schaden: ${fmt(info.damage)}</div>
+          <div class="muted" style="margin-bottom:4px"><span class="dot" style="background:${hex(owner?.color ?? 0xffffff)}"></span>${esc(owner?.name ?? '?')}${shared ? ' <span class="bad">(getrennt – gemeinsam nutzbar)</span>' : ''} · Kills: ${info.kills} · Schaden: ${fmt(info.damage)}</div>
           <div class="stats">${statLines(eff, def.levels[info.level]).map(([k, v]) => `<div><span class="muted">${k}:</span> ${v}</div>`).join('')}</div>
-          ${mine ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).filter(() => eff.dmg > 0).map((m) => `<button data-mode="${m}" class="${info.mode === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}
         </div>
         ${mine ? `<div class="actions">
-          ${next ? `<button class="primary up">⬆ Aufwerten (U)<br><small>${def.upCost[info.level]} 💰${def.upLumber[info.level] ? ` ${def.upLumber[info.level]} 🌲` : ''}</small></button>` : '<button disabled>Max. Stufe</button>'}
-          <button class="sell">Verkaufen (V)<br><small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small></button>
-        </div>` : ''}`;
-      panel.querySelector<HTMLButtonElement>('.up')?.addEventListener('click', () => this.net.send({ t: 'upgrade', id: info.id }));
+          <button class="primary up" ${next ? '' : 'disabled'}>${upLabel}</button>
+          <button class="sell">Verkaufen (V)<small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small></button>
+        </div>` : ''}
+        ${mine && eff.dmg > 0 ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${info.mode === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
       const upBtn = panel.querySelector<HTMLButtonElement>('.up');
+      upBtn?.addEventListener('click', () => { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: info.id }); });
       if (upBtn && next) {
         upBtn.onmouseenter = () => this.showTooltip(upBtn, towerTooltip(def, info.level + 1));
         upBtn.onmouseleave = () => this.hideTooltip();
       }
-      panel.querySelector<HTMLButtonElement>('.sell')?.addEventListener('click', () => this.net.send({ t: 'sell', id: info.id }));
+      // Right after an upgrade the panel is redrawn – ignore clicks on "sell" for a moment so a double click cannot sell the tower.
+      panel.querySelector<HTMLButtonElement>('.sell')?.addEventListener('click', () => {
+        if (performance.now() - this.lastUpgradeAt < 900) return;
+        this.net.send({ t: 'sell', id: info.id });
+      });
       panel.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => { b.onclick = () => this.net.send({ t: 'mode', id: info.id, mode: b.dataset.mode as TargetMode }); });
       this.world.showRange(this.world.rangeRing, info.cx + 0.5, info.cy + 0.5, eff.range);
       if (eff.aura) this.world.showRange(this.world.auraRing, info.cx + 0.5, info.cy + 0.5, eff.aura.range); else this.world.auraRing.visible = false;
@@ -544,15 +611,15 @@ export class GameView {
         this.toggleMenu(false);
         this.buildDef = null; this.select(null); this.updateBuildButtons(); return;
       }
-      if (e.key === ' ') { e.preventDefault(); this.focusOwnSection(); return; }
+      if (e.key === ' ') { e.preventDefault(); this.focusNext(); return; }
       if (/^[1-9]$/.test(e.key) && this.myClass) {
         const def = this.myClass.towers[Number(e.key) - 1];
         if (def) this.startBuild(def);
         return;
       }
       const sel = this.selected?.kind === 'tower' ? this.ent.towers.get(this.selected.id) : undefined;
-      if (key === 'u' && sel && sel.info.owner === this.you) this.net.send({ t: 'upgrade', id: sel.info.id });
-      else if (key === 'v' && sel && sel.info.owner === this.you) this.net.send({ t: 'sell', id: sel.info.id });
+      if (key === 'u' && sel && this.canUse(sel.info)) { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: sel.info.id }); }
+      else if (key === 'v' && sel && this.canUse(sel.info)) this.net.send({ t: 'sell', id: sel.info.id });
       else if (key === 'f') this.toggleResearch();
       else if (key === 'n') this.toggleReady();
       else if (key === 'p') this.togglePause();
@@ -560,20 +627,18 @@ export class GameView {
     });
   }
 
-  /** Route lines are shown if the host allows it and the player has not hidden them. */
-  private get routeVisible() { return this.options.showRoute && this.view.route; }
+  /** Route lines are shown unless the player has hidden them. */
+  private get routeVisible() { return this.view.route; }
 
   private repaintZones() {
-    const colors = new Map([...this.players.values()].map((p) => [p.id, p.color]));
-    this.world.paintMap(this.sectionOwners, colors, this.you, this.view.zones);
+    this.world.paintMap(this.view.zones);
     this.minimapBg = null;
   }
 
   private updateViewButtons() {
     const r = this.q('.h-route');
     r.textContent = `🧭 Laufweg: ${this.view.route ? 'an' : 'aus'}`;
-    r.classList.toggle('hidden', !this.options.showRoute);
-    this.q('.h-zones').textContent = `🔲 Bauzonen: ${this.view.zones ? 'an' : 'aus'}`;
+    this.q('.h-zones').textContent = `🔲 Bauraster: ${this.view.zones ? 'an' : 'aus'}`;
   }
 
   private toggleMenu(open?: boolean) {
@@ -597,6 +662,7 @@ export class GameView {
     this.q('.p-resume').classList.toggle('hidden', this.spectator);
     this.q('.h-pause').classList.toggle('hidden', this.spectator);
     this.q('.h-save').classList.toggle('hidden', this.spectator);
+    this.q('.h-gift').classList.toggle('hidden', this.spectator);
     this.q('.h-pause').classList.toggle('active', !!by);
     this.q('.h-pause').innerHTML = by ? '▶ Fortsetzen <small>P</small>' : '⏸ Pause <small>P</small>';
     this.updateHud(true);
@@ -645,7 +711,7 @@ export class GameView {
     if (this.buildDef && h && this.me) {
       const def = this.buildDef;
       const occupied = [...this.ent.towers.values()].some((t) => t.info.cx === h.cx && t.info.cy === h.cy);
-      const own = isBuildable(h.cx, h.cy) && (!this.options.ownZonesOnly || this.sectionOwners[SECTION_OF[cellIndex(h.cx, h.cy)]] === this.you);
+      const own = isBuildable(h.cx, h.cy);
       const ok = own && !occupied && this.me.gold >= def.cost && this.me.lumber >= def.lumber && !this.wouldBlock(h.cx, h.cy);
       w.hoverMesh.visible = h.cx >= 0 && h.cy >= 0 && h.cx < MAP_W && h.cy < MAP_H;
       toWorld(h.cx + 0.5, h.cy + 0.5, 0.06, w.hoverMesh.position);
@@ -659,12 +725,17 @@ export class GameView {
     if (!this.selected) { w.rangeRing.visible = false; w.auraRing.visible = false; }
   }
 
-  private focusOwnSection() {
-    const mine: number[] = [];
-    this.sectionOwners.forEach((o, i) => { if (o === this.you) mine.push(i); });
-    const sections = mine.length ? mine : [0];
-    const s = sections[this.sectionCycle++ % sections.length];
-    this.world.focus(ZONE_CENTER[s].x, ZONE_CENTER[s].y);
+  /** First camera position: the player's wish from the lobby, else the first active portal. */
+  private focusStart() {
+    if (this.wish) this.world.focus(this.wish.x * MAP_W, this.wish.y * MAP_H);
+    else this.world.focus(SPAWNS[this.lanes[0] ?? 0].x, SPAWNS[this.lanes[0] ?? 0].y + 8);
+  }
+
+  /** Space: cycles the camera through the active portals and the gate. */
+  private focusNext() {
+    const spots = [...this.lanes.map((l) => ({ x: SPAWNS[l].x, y: SPAWNS[l].y + 6 })), { x: Math.min(MAP_W - 1, Math.max(1, GATE.x)), y: MAP_H - 8 }];
+    const p = spots[this.focusCycle++ % spots.length];
+    this.world.focus(p.x, p.y);
   }
 
   /** Recomputes the creep routes from the current towers (shown as dashed lines, like the Wintermaul maze preview). */
@@ -672,7 +743,7 @@ export class GameView {
     this.blocked.fill(0);
     for (const t of this.ent.towers.values()) this.blocked[cellIndex(t.info.cx, t.info.cy)] = 1;
     const flow = computeFlow(this.blocked);
-    this.routes = lanesOf(this.sectionOwners).map((l) => traceRoute(flow, this.blocked, SPAWNS[l].x, SPAWNS[l].y));
+    this.routes = this.lanes.map((l) => traceRoute(flow, this.blocked, SPAWNS[l].x, SPAWNS[l].y));
     this.world.setRoutes(this.routeVisible ? this.routes : []);
     this.blockCheck.key = '';
     this.renderMazeInfo();
@@ -694,13 +765,31 @@ export class GameView {
 
   /** Length of the creep route through the lanes the player builds in. */
   private renderMazeInfo() {
-    const lanes = lanesOf(this.sectionOwners);
-    const mine = new Set<number>();
     const el = this.q('.h-maze');
     el.classList.toggle('hidden', !this.routeVisible);
-    this.sectionOwners.forEach((o, s) => { if (o === this.you) mine.add(MAP_DEF.zoneHome[s]); });
-    const parts = lanes.map((l, i) => `<span class="${mine.has(l) ? 'gold' : 'muted'}">${Math.round(routeLength(this.routes[i] ?? []))}</span>`);
+    const parts = this.lanes.map((_, i) => `<span class="gold">${Math.round(routeLength(this.routes[i] ?? []))}</span>`);
     el.innerHTML = `🧭 Weglänge: ${parts.join(' · ')}`;
+  }
+
+  // ------------------------------------------------------------------ gold gifts
+
+  private openGift() {
+    if (this.spectator || this.over) return;
+    const sel = this.q<HTMLSelectElement>('.g-to');
+    const others = [...this.players.values()].filter((p) => p.id !== this.you);
+    if (!others.length) { this.toast('Es gibt keine Mitspieler.'); return; }
+    sel.innerHTML = others.map((p) => `<option value="${p.id}">${esc(p.name)}${p.connected ? '' : ' (getrennt)'}</option>`).join('');
+    this.q('.g-have').textContent = String(Math.floor(this.me?.gold ?? 0));
+    this.q('.o-gift').classList.remove('hidden');
+    this.q<HTMLInputElement>('.g-amount').focus();
+  }
+
+  private sendGift() {
+    const to = this.q<HTMLSelectElement>('.g-to').value;
+    const amount = Math.floor(Number(this.q<HTMLInputElement>('.g-amount').value));
+    if (!to || !(amount > 0)) return;
+    this.net.send({ t: 'gift', to, amount });
+    this.q('.o-gift').classList.add('hidden');
   }
 
   private minimapClick(e: MouseEvent) {
@@ -821,13 +910,6 @@ export class GameView {
           const i = cellIndex(x, y);
           b.fillStyle = WATER[i] ? '#3f78a8' : WALKABLE[i] ? (SECTION_OF[i] < 0 ? '#c4dcec' : '#e8eef5') : '#3a4552';
           b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
-          if (!WALKABLE[i]) continue;
-          const s = SECTION_OF[i];
-          if (s >= 0 && this.sectionOwners.length && this.view.zones) {
-            const col = this.players.get(this.sectionOwners[s])?.color ?? 0xffffff;
-            b.fillStyle = hex(col) + (this.sectionOwners[s] === this.you ? '30' : '14');
-            b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
-          }
         }
       }
       this.minimapBg = bg;

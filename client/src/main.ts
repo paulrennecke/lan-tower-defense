@@ -22,7 +22,8 @@ const lobby = new LobbyUI(app, {
   load: (id) => net.send({ t: 'load', id }),
   deleteSave: (id) => net.send({ t: 'deleteSave', id }),
   setMap: (id) => net.send({ t: 'setMap', id }),
-  setOptions: (options) => net.send({ t: 'setOptions', options }),
+  setPos: (x, y) => net.send({ t: 'setPos', x, y }),
+  kick: (id) => net.send({ t: 'kick', id }),
 }, name);
 
 const game = new GameView(app, net);
@@ -44,9 +45,20 @@ net.onMessage((msg: ServerMsg) => {
       phase = msg.phase;
       lobby.update(msg, you);
       game.setHost(hostId);
-      game.updateLobby(msg.players);
+      game.updateLobby(msg.players, you);
       if (phase === 'lobby') { game.show(false); lobby.show(true); }
       break;
+    case 'kicked': {
+      // Stop reconnecting and drop the session token so a reload joins as a new player.
+      net.stop();
+      sessionStorage.removeItem('td-token');
+      const box = document.createElement('div');
+      box.className = 'overlay';
+      box.innerHTML = '<div class="panel" style="text-align:center"><h2 style="margin-top:0">Du wurdest vom Host entfernt</h2><button class="primary">Neu verbinden</button></div>';
+      box.querySelector('button')!.addEventListener('click', () => location.reload());
+      document.body.appendChild(box);
+      break;
+    }
     case 'game':
       lobby.show(false);
       game.load(msg.state, hostId);

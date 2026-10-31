@@ -8,12 +8,12 @@ import {
   getWave, playerHpMul, waveBaseHp, waveBounty, waveIncome, waveLumber,
 } from '../shared/data/waves';
 import {
-  EXIT, GATE, LANE_LAST_ZONE, MAP_H, MAP_ID, MAP_W, SPAWNS, WALKABLE, assignSections, cellIndex, computeFlow, isBuildable,
-  laneZones, lanesOf, nextCell, SECTION_OF, setActiveMap, spawnsConnected,
+  EXIT, FLY_FLOW, MAP_H, MAP_ID, MAP_W, SPAWNS, WALKABLE, activeLanes, cellIndex, computeFlow, flyTarget, isBuildable,
+  nextCell, setActiveMap, spawnsConnected,
 } from '../shared/map';
 import {
-  DEFAULT_OPTIONS, type GameOptions, EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN,
-  type EnemySnap, type FullState, type Fx, type PlayerStats, type Snapshot, type TargetMode, type TowerInfo,
+  EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN,
+  type EnemySnap, type FullState, type Fx, type GameSummary, type PlayerEndStats, type PlayerStats, type Snapshot, type TargetMode, type TowerInfo,
 } from '../shared/protocol';
 
 export interface GamePlayer {
@@ -25,7 +25,10 @@ export interface GamePlayer {
   lumber: number;
   kills: number;
   damage: number;
-  leaks: number;
+  towersBuilt: number;
+  upgrades: number;
+  goldEarned: number;
+  goldSent: number;
   ready: boolean;
   connected: boolean;
   research: Record<string, number>;
@@ -88,7 +91,7 @@ export interface GameHooks {
 
 export const SELL_REFUND = 0.75;
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface GameSave {
   version: number;
@@ -99,16 +102,19 @@ export interface GameSave {
   timer: number;
   victory: boolean;
   nextId: number;
-  hpMul: number;
+  lanes: number[];
   leaksByWave: Record<number, number>;
+  killsByType: Record<string, number>;
+  leaksByType: Record<string, number>;
+  bossesKilled: number;
+  livesLost: number;
+  creepsKilled: number;
   players: GamePlayer[];
-  sectionOwners: string[];
   towers: (TowerInfo & { cdLeft: number })[];
   enemies: Omit<Enemy, 'def'>[];
   projectiles: Proj[];
   mines: Mine[];
   spawnQueue: { at: number; enemy: string; hpMul: number; wave: number; lane: number }[];
-  options?: GameOptions;
 }
 
 export class Game {
@@ -123,8 +129,14 @@ export class Game {
   /** Name of the player who paused the game; null while running. */
   paused: string | null = null;
   readonly leaksByWave: Record<number, number> = {};
+  readonly killsByType: Record<string, number> = {};
+  readonly leaksByType: Record<string, number> = {};
+  bossesKilled = 0;
+  livesLost = 0;
+  creepsKilled = 0;
   readonly players = new Map<string, GamePlayer>();
-  readonly sectionOwners: string[];
+  /** Lanes (spawns) that receive creeps – fixed when the game starts. */
+  lanes: number[];
   readonly towers = new Map<number, Tower>();
   enemies: Enemy[] = [];
   private enemyById = new Map<number, Enemy>();
@@ -138,41 +150,63 @@ export class Game {
   private spawnQueue: { at: number; enemy: string; hpMul: number; wave: number; lane: number }[] = [];
   private fx: Fx[] = [];
   private nextId = 1;
-  private hpMul: number;
   private towersDirty = true;
 
-  readonly options: GameOptions;
-
-  constructor(players: { id: string; name: string; color: number; classId: string }[], private hooks: GameHooks = {}, options: Partial<GameOptions> = {}) {
-    this.options = { ...DEFAULT_OPTIONS, ...options };
+  constructor(players: { id: string; name: string; color: number; classId: string }[], private hooks: GameHooks = {}) {
     for (const p of players) {
       this.players.set(p.id, {
-        ...p, gold: START_GOLD, lumber: START_LUMBER, kills: 0, damage: 0, leaks: 0,
+        ...p, gold: START_GOLD, lumber: START_LUMBER, kills: 0, damage: 0, towersBuilt: 0, upgrades: 0, goldEarned: 0, goldSent: 0,
         ready: false, connected: true, research: {},
       });
     }
-    this.sectionOwners = assignSections(players.map((p) => p.id));
-    // Each lane gets the full wave; HP scales with the number of players defending a lane.
+    this.lanes = activeLanes(players.length);
     // All lanes leak into the shared lives, so more lanes get a little slack.
-    const lanes = this.lanes.length;
-    this.hpMul = (playerHpMul(players.length) / lanes) * Math.pow(0.93, lanes - 1) * MAP_BY_ID[this.mapId].hpScale;
-    this.lives = START_LIVES + 10 * (lanes - 1);
+    this.lives = START_LIVES + 10 * (this.lanes.length - 1);
   }
 
-  /** Lanes that receive creeps. */
-  get lanes() { return lanesOf(this.sectionOwners); }
+  /**
+   * Creep HP: every lane gets the whole wave, so HP scales with the players per lane (more players = more towers).
+   * Computed live so players who join later make the game harder.
+   */
+  private get hpMul(): number {
+    const lanes = this.lanes.length;
+    return (playerHpMul(this.players.size) / lanes) * Math.pow(0.93, lanes - 1) * MAP_BY_ID[this.mapId].hpScale;
+  }
 
-  /** Players owning at least one zone in the lane. */
-  laneDefenders(lane: number): GamePlayer[] {
-    const ids = new Set(laneZones(lane).map((s) => this.sectionOwners[s]).filter(Boolean));
-    return [...ids].map((id) => this.players.get(id)!).filter(Boolean);
+  /** Adds a player to a running game (late join). Starts with the average resources of the others. */
+  addPlayer(p: { id: string; name: string; color: number; classId: string }): GamePlayer {
+    const others = [...this.players.values()];
+    const avg = (key: 'gold' | 'lumber') => (others.length ? Math.round(others.reduce((sum, o) => sum + o[key], 0) / others.length) : 0);
+    const player: GamePlayer = {
+      ...p, gold: Math.max(START_GOLD, avg('gold')), lumber: Math.max(START_LUMBER, avg('lumber')), kills: 0, damage: 0,
+      towersBuilt: 0, upgrades: 0, goldEarned: 0, goldSent: 0, ready: false, connected: true, research: {},
+    };
+    this.players.set(p.id, player);
+    return player;
+  }
+
+  /** A tower can be used by its owner – and by everybody while the owner is disconnected. */
+  canControl(pid: string, t: { owner: string }): boolean {
+    return t.owner === pid || !this.players.get(t.owner)?.connected;
+  }
+
+  /** Sends gold to another player. */
+  gift(from: string, to: string, amount: number): string | null {
+    const a = this.players.get(from), b = this.players.get(to);
+    if (!a || !b || from === to) return 'Ungültig.';
+    if (!Number.isInteger(amount) || amount <= 0) return 'Ungültiger Betrag.';
+    if (a.gold < amount) return 'Nicht genug Gold.';
+    a.gold -= amount;
+    b.gold += amount;
+    a.goldSent += amount;
+    this.hooks.event?.('info', `💸 ${a.name} schickt ${b.name} ${amount} Gold.`);
+    return null;
   }
 
   // ------------------------------------------------------------------ commands
 
   canBuildAt(pid: string, cx: number, cy: number): string | null {
     if (!isBuildable(cx, cy)) return 'Hier kann nicht gebaut werden.';
-    if (this.options.ownZonesOnly && this.sectionOwners[SECTION_OF[cellIndex(cx, cy)]] !== pid) return 'Das ist nicht dein Bauabschnitt.';
     if (this.occupancy.has(cellIndex(cx, cy))) return 'Feld ist belegt.';
     return null;
   }
@@ -213,6 +247,7 @@ export class Game {
     this.occupancy.set(cellIndex(cx, cy), t.id);
     this.blocked[cellIndex(cx, cy)] = 1;
     this.flow = flow;
+    p.towersBuilt++;
     this.towersDirty = true;
     this.hooks.tower?.(this.towerInfo(t));
     return null;
@@ -222,7 +257,7 @@ export class Game {
     const p = this.players.get(pid);
     const t = this.towers.get(id);
     if (this.over) return 'Das Spiel ist vorbei.';
-    if (!p || !t || t.owner !== pid) return 'Ungültig.';
+    if (!p || !t || !this.canControl(pid, t)) return 'Ungültig.';
     if (t.level >= (TOWER_BY_ID[t.def].maxLevel ?? 2)) return 'Maximale Stufe erreicht.';
     const def = TOWER_BY_ID[t.def];
     const cost = def.upCost[t.level], lumber = def.upLumber[t.level];
@@ -231,6 +266,7 @@ export class Game {
     p.gold -= cost;
     p.lumber -= lumber;
     t.level++;
+    p.upgrades++;
     t.invested += cost;
     this.towersDirty = true;
     this.hooks.tower?.(this.towerInfo(t));
@@ -241,7 +277,7 @@ export class Game {
     const p = this.players.get(pid);
     const t = this.towers.get(id);
     if (this.over) return 'Das Spiel ist vorbei.';
-    if (!p || !t || t.owner !== pid) return 'Ungültig.';
+    if (!p || !t || !this.canControl(pid, t)) return 'Ungültig.';
     p.gold += Math.floor(t.invested * SELL_REFUND);
     this.towers.delete(id);
     this.occupancy.delete(cellIndex(t.cx, t.cy));
@@ -255,7 +291,7 @@ export class Game {
 
   setMode(pid: string, id: number, mode: TargetMode): string | null {
     const t = this.towers.get(id);
-    if (!t || t.owner !== pid) return 'Ungültig.';
+    if (!t || !this.canControl(pid, t)) return 'Ungültig.';
     t.mode = mode;
     this.hooks.tower?.(this.towerInfo(t));
     return null;
@@ -374,28 +410,28 @@ export class Game {
   }
 
   private remaining(e: Enemy): number {
-    if (e.def.flying) return Math.hypot(GATE.x - e.x, GATE.y - e.y);
-    const d = this.flow[cellIndex(Math.floor(e.x), Math.floor(e.y))];
-    return Number.isFinite(d) ? d : Math.hypot(GATE.x - e.x, GATE.y - e.y) + 100;
+    const field = e.def.flying ? FLY_FLOW : this.flow;
+    const d = field[cellIndex(Math.floor(e.x), Math.floor(e.y))];
+    return Number.isFinite(d) ? d : 1e6;
   }
 
-  /** Moves a creep: flyers straight to the gate, ground creeps along the flow field around the towers. */
+  /** Moves a creep: ground creeps follow the flow field around towers, flyers fly around cliffs but over towers. */
   private move(e: Enemy, step: number): boolean {
     if (e.def.flying) {
-      const dx = GATE.x - e.x, dy = GATE.y - e.y, dd = Math.hypot(dx, dy);
-      if (dd <= step + 0.3) return true;
-      e.x += (dx / dd) * step;
-      e.y += (dy / dd) * step;
-      return false;
+      const t = flyTarget(e.x, e.y);
+      if (t.done) return true;
+      const dx = t.x - e.x, dy = t.y - e.y, dd = Math.hypot(dx, dy);
+      if (dd <= step) { e.x = t.x; e.y = t.y; } else { e.x += (dx / dd) * step; e.y += (dy / dd) * step; }
+      return EXIT[cellIndex(Math.floor(e.x), Math.floor(e.y))] === 1;
     }
     let left = step;
     for (let k = 0; k < 4 && left > 1e-6; k++) {
       const cx = Math.floor(e.x), cy = Math.floor(e.y);
       if (EXIT[cellIndex(cx, cy)]) return true;
       const j = nextCell(this.flow, this.blocked, cx, cy);
-      // Off the flow field (should not happen): head for the cell centre, then the gate.
-      const tx = j >= 0 ? (j % MAP_W) + 0.5 : WALKABLE[cellIndex(cx, cy)] ? GATE.x : cx + 0.5;
-      const ty = j >= 0 ? Math.floor(j / MAP_W) + 0.5 : WALKABLE[cellIndex(cx, cy)] ? GATE.y : cy + 0.5;
+      // Off the flow field (should not happen): stay on the cell centre.
+      const tx = j >= 0 ? (j % MAP_W) + 0.5 : cx + 0.5;
+      const ty = j >= 0 ? Math.floor(j / MAP_W) + 0.5 : cy + 0.5;
       const dx = tx - e.x, dy = ty - e.y, dd = Math.hypot(dx, dy);
       if (dd <= left) { e.x = tx; e.y = ty; left -= dd; if (dd < 1e-6) break; } else { e.x += (dx / dd) * left; e.y += (dy / dd) * left; left = 0; }
     }
@@ -440,12 +476,12 @@ export class Game {
   private leak(e: Enemy) {
     e.dead = true;
     this.enemyById.delete(e.id);
-    this.lives = Math.max(0, this.lives - e.def.lives);
+    const lost = Math.min(this.lives, e.def.lives);
+    this.lives -= lost;
+    this.livesLost += lost;
     this.leaksByWave[e.wave] = (this.leaksByWave[e.wave] ?? 0) + e.def.lives;
+    this.leaksByType[e.def.id] = (this.leaksByType[e.def.id] ?? 0) + 1;
     this.fx.push(['l', e.id]);
-    // The owner of the last zone of the creep's lane takes the blame on the scoreboard.
-    const last = this.players.get(this.sectionOwners[LANE_LAST_ZONE[e.lane]]);
-    if (last) last.leaks++;
     if (this.lives <= 0 && !this.over) {
       this.over = true;
       this.hooks.gameOver?.(this.wave, this.victory);
@@ -620,19 +656,26 @@ export class Game {
     const killer = this.players.get(owner);
     const t = this.towers.get(towerId);
     if (t) t.kills++;
-    // Kill gold goes to the defenders of the creep's lane; a helping killer from another lane gets it, too.
-    const defenders = this.laneDefenders(e.lane);
-    if (killer && !defenders.includes(killer)) defenders.push(killer);
-    for (const p of defenders) p.gold += e.bounty;
+    // Kill gold is shared by all players. Every lane spawns the full wave, so the bounty is divided by the number of
+    // lanes – income per player then does not depend on how many lanes are in play.
+    this.creepsKilled++;
+    this.killsByType[e.def.id] = (this.killsByType[e.def.id] ?? 0) + 1;
+    const share = e.bounty / Math.max(1, this.lanes.length);
+    for (const p of this.players.values()) { p.gold += share; p.goldEarned += share; }
     if (killer) {
       killer.kills++;
-      for (const [rid, lvl] of Object.entries(killer.research)) killer.gold += (RESEARCH_BY_ID[rid]?.perLevel.bounty ?? 0) * lvl;
+      for (const [rid, lvl] of Object.entries(killer.research)) {
+        const extra = (RESEARCH_BY_ID[rid]?.perLevel.bounty ?? 0) * lvl;
+        killer.gold += extra;
+        killer.goldEarned += extra;
+      }
     }
     if (e.def.boss) {
-      for (const p of this.laneDefenders(e.lane)) p.lumber += 2;
-      this.hooks.event?.('info', `${e.def.name} wurde besiegt! +2 Holz für ${this.laneDefenders(e.lane).map((p) => p.name).join(', ')}.`);
+      this.bossesKilled++;
+      for (const p of this.players.values()) p.lumber += 2;
+      this.hooks.event?.('info', `${e.def.name} wurde besiegt! +2 Holz für alle.`);
     }
-    this.fx.push(['k', Math.round(e.x * 10) / 10, Math.round(e.y * 10) / 10, e.bounty]);
+    this.fx.push(['k', Math.round(e.x * 10) / 10, Math.round(e.y * 10) / 10, Math.round(share * 10) / 10]);
     if (e.def.split) {
       for (let i = 0; i < e.def.split.count; i++) {
         const child = this.spawnEnemy(e.def.split.into, e.wave, 1, e.lane, { x: e.x + (Math.random() - 0.5) * 0.6, y: e.y + (Math.random() - 0.5) * 0.6 });
@@ -701,7 +744,7 @@ export class Game {
   playerStats(): PlayerStats[] {
     return [...this.players.values()].map((p) => ({
       id: p.id, gold: Math.floor(p.gold), lumber: p.lumber, kills: p.kills, damage: Math.round(p.damage),
-      leaks: p.leaks, ready: p.ready, research: p.research,
+      ready: p.ready, research: p.research,
     }));
   }
 
@@ -726,17 +769,16 @@ export class Game {
     };
   }
 
-  fullState(you: string, lobby: Map<string, { name: string; color: number; classId: string | null; connected: boolean; spectator: boolean }>, highscore: number): FullState {
+  fullState(you: string, lobby: Map<string, { name: string; color: number; classId: string | null; connected: boolean; spectator: boolean; pos: { x: number; y: number } | null }>, highscore: number): FullState {
     const stats = this.playerStats();
     return {
       you,
       players: stats.map((s) => {
         const p = this.players.get(s.id)!;
-        return { ...s, name: p.name, color: p.color, classId: p.classId, connected: lobby.get(s.id)?.connected ?? false, spectator: false };
+        return { ...s, name: p.name, color: p.color, classId: p.classId, connected: lobby.get(s.id)?.connected ?? false, spectator: false, pos: null };
       }),
       map: this.mapId,
-      options: this.options,
-      sectionOwners: this.sectionOwners,
+      lanes: this.lanes,
       towers: [...this.towers.values()].map((t) => this.towerInfo(t)),
       mines: [...this.mines.values()].map((m) => [m.id, m.x, m.y]),
       wave: this.wave,
@@ -754,11 +796,11 @@ export class Game {
 
   toSave(): GameSave {
     return {
-      version: SAVE_VERSION, map: this.mapId, options: { ...this.options },
+      version: SAVE_VERSION, map: this.mapId, lanes: [...this.lanes],
       time: this.time, wave: this.wave, lives: this.lives, timer: this.timer, victory: this.victory,
-      nextId: this.nextId, hpMul: this.hpMul, leaksByWave: { ...this.leaksByWave },
+      nextId: this.nextId, leaksByWave: { ...this.leaksByWave }, killsByType: { ...this.killsByType }, leaksByType: { ...this.leaksByType },
+      bossesKilled: this.bossesKilled, livesLost: this.livesLost, creepsKilled: this.creepsKilled,
       players: [...this.players.values()].map((p) => ({ ...p, research: { ...p.research }, ready: false, connected: false })),
-      sectionOwners: [...this.sectionOwners],
       towers: [...this.towers.values()].map((t) => ({ ...this.towerInfo(t), damage: t.damage, cdLeft: t.cdLeft })),
       enemies: this.enemies.filter((e) => !e.dead).map(({ def: _def, dots, ...e }) => ({ ...e, dots: dots.map((d) => ({ ...d })) })),
       projectiles: this.projectiles.map((p) => ({ ...p })),
@@ -775,17 +817,21 @@ export class Game {
     setActiveMap(s.map);
     const players = s.players.filter((p) => CLASS_BY_ID[p.classId]);
     if (players.length !== s.players.length) throw new Error('Spielstand enthält unbekannte Klassen.');
-    const g = new Game(players, hooks, s.options);
+    const g = new Game(players, hooks);
+    g.lanes = s.lanes.slice();
     for (const p of players) g.players.set(p.id, { ...p, research: { ...p.research }, ready: false, connected: false });
-    g.sectionOwners.splice(0, g.sectionOwners.length, ...s.sectionOwners);
     g.time = s.time;
     g.wave = s.wave;
     g.lives = s.lives;
     g.timer = s.timer;
     g.victory = s.victory;
     g.nextId = s.nextId;
-    g.hpMul = s.hpMul;
     Object.assign(g.leaksByWave, s.leaksByWave);
+    Object.assign(g.killsByType, s.killsByType);
+    Object.assign(g.leaksByType, s.leaksByType);
+    g.bossesKilled = s.bossesKilled;
+    g.livesLost = s.livesLost;
+    g.creepsKilled = s.creepsKilled;
     for (const t of s.towers) {
       if (!TOWER_BY_ID[t.def] || !g.players.has(t.owner)) continue;
       const tower: Tower = { ...t, x: t.cx + 0.5, y: t.cy + 0.5, stats: TOWER_BY_ID[t.def].levels[t.level] };
@@ -807,6 +853,28 @@ export class Game {
     g.recalcTowers();
     g.paused = pausedBy;
     return g;
+  }
+
+  // ------------------------------------------------------------------ end of game
+
+  endStats(): { stats: PlayerEndStats[]; summary: GameSummary } {
+    const top = (rec: Record<string, number>): [string, number][] => Object.entries(rec).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const towers = [...this.towers.values()].filter((t) => TOWER_BY_ID[t.def].maxLevel !== 0);
+    const best = towers.sort((a, b) => b.damage - a.damage)[0];
+    const players = [...this.players.values()];
+    return {
+      stats: players.map((p) => ({
+        id: p.id, name: p.name, color: p.color, classId: p.classId, kills: p.kills, damage: Math.round(p.damage),
+        towersBuilt: p.towersBuilt, upgrades: p.upgrades, goldEarned: Math.round(p.goldEarned), goldSent: p.goldSent,
+      })),
+      summary: {
+        map: this.mapId, players: players.length, time: Math.round(this.time), livesLeft: this.lives, livesLost: this.livesLost,
+        creepsKilled: this.creepsKilled, bossesKilled: this.bossesKilled, totalDamage: Math.round(players.reduce((s, p) => s + p.damage, 0)),
+        towersBuilt: players.reduce((s, p) => s + p.towersBuilt, 0), towersAlive: this.towers.size,
+        topTower: best ? { def: best.def, owner: this.players.get(best.owner)?.name ?? '?', kills: best.kills, damage: Math.round(best.damage), level: best.level } : null,
+        topKilled: top(this.killsByType), topLeaked: top(this.leaksByType),
+      },
+    };
   }
 
   get enemyCount() { return this.enemies.length; }

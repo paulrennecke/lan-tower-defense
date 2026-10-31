@@ -10,15 +10,6 @@ export const PLAYER_COLORS = [
 
 export const MAX_PLAYERS = 16;
 
-/** Rules chosen by the host in the lobby. */
-export interface GameOptions {
-  /** Players may only build in their own zones (off = everyone may build in every zone). */
-  ownZonesOnly: boolean;
-  /** Show the creep route (dashed line, minimap, route length). */
-  showRoute: boolean;
-}
-export const DEFAULT_OPTIONS: GameOptions = { ownZonesOnly: true, showRoute: true };
-
 export type GamePhase = 'lobby' | 'playing' | 'gameover';
 
 export interface LobbyPlayer {
@@ -29,6 +20,8 @@ export interface LobbyPlayer {
   ready: boolean;
   connected: boolean;
   spectator: boolean;
+  /** Where the player would like to play (0..1 on the lobby map preview), null = no wish. */
+  pos: { x: number; y: number } | null;
 }
 
 export interface TowerInfo {
@@ -50,7 +43,6 @@ export interface PlayerStats {
   lumber: number;
   kills: number;
   damage: number;
-  leaks: number;
   ready: boolean;
   research: Record<string, number>;
 }
@@ -73,9 +65,9 @@ export type Fx =
 export interface FullState {
   you: string;
   map: string;
-  options: GameOptions;
+  /** Lanes (spawns) that receive creeps. */
+  lanes: number[];
   players: (LobbyPlayer & PlayerStats)[];
-  sectionOwners: string[];
   towers: TowerInfo[];
   mines: [number, number, number][];
   wave: number;
@@ -106,6 +98,38 @@ export interface SaveInfo {
   map?: string;
 }
 
+export interface PlayerEndStats {
+  id: string;
+  name: string;
+  color: number;
+  classId: string;
+  kills: number;
+  damage: number;
+  towersBuilt: number;
+  upgrades: number;
+  goldEarned: number;
+  goldSent: number;
+}
+
+export interface GameSummary {
+  map: string;
+  players: number;
+  /** Simulated play time in seconds. */
+  time: number;
+  livesLeft: number;
+  livesLost: number;
+  creepsKilled: number;
+  bossesKilled: number;
+  totalDamage: number;
+  towersBuilt: number;
+  towersAlive: number;
+  /** Tower that dealt the most damage. */
+  topTower: { def: string; owner: string; kills: number; damage: number; level: number } | null;
+  /** Creep types that were killed / leaked most (id, count), top entries. */
+  topKilled: [string, number][];
+  topLeaked: [string, number][];
+}
+
 export type ClientMsg =
   | { t: 'hello'; name: string; token?: string }
   | { t: 'setClass'; classId: string }
@@ -113,7 +137,10 @@ export type ClientMsg =
   | { t: 'lobbyReady'; ready: boolean }
   | { t: 'start' }
   | { t: 'setMap'; id: string }
-  | { t: 'setOptions'; options: Partial<GameOptions> }
+  | { t: 'setPos'; x: number; y: number }
+  | { t: 'kick'; id: string }
+  | { t: 'gift'; to: string; amount: number }
+  | { t: 'joinGame'; classId: string }
   | { t: 'chat'; text: string }
   | { t: 'build'; def: string; cx: number; cy: number }
   | { t: 'upgrade'; id: number }
@@ -132,7 +159,7 @@ export type ClientMsg =
 
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string }
-  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string; options: GameOptions }
+  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string }
   | { t: 'game'; state: FullState }
   | Snapshot
   | { t: 'tower'; tower: TowerInfo }
@@ -140,5 +167,8 @@ export type ServerMsg =
   | { t: 'chat'; from: string | null; name: string; color: number; text: string }
   | { t: 'ping'; x: number; y: number; color: number }
   | { t: 'event'; kind: 'wave' | 'boss' | 'victory' | 'info' | 'warn'; text: string }
-  | { t: 'gameOver'; wave: number; victory: boolean; highscore: number; stats: { id: string; name: string; color: number; kills: number; damage: number; leaks: number }[] }
+  | { t: 'kicked' }
+  /** A player joined the running game. */
+  | { t: 'joined'; player: LobbyPlayer & PlayerStats }
+  | { t: 'gameOver'; wave: number; victory: boolean; highscore: number; newRecord: boolean; stats: PlayerEndStats[]; summary: GameSummary }
   | { t: 'error'; msg: string };

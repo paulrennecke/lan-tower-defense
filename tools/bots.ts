@@ -16,7 +16,6 @@ function bot(i: number) {
   const send = (m: ClientMsg) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(m));
   const cls = CLASSES[i % CLASSES.length].id;
   let you = '';
-  let owners: string[] = [];
   const towers = new Map<number, TowerInfo>();
   let gold = 0, lumber = 0, timer = 0;
   let free: { cx: number; cy: number }[] = [];
@@ -38,11 +37,10 @@ function bot(i: number) {
         }
         break;
       case 'game':
-        owners = msg.state.sectionOwners;
         free = [];
         for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
           const s = SECTION_OF[cellIndex(cx, cy)];
-          if (s >= 0 && owners[s] === you) free.push({ cx, cy });
+          if (s >= 0) free.push({ cx, cy });
         }
         // Wall rows of a simple maze first (every third row), so bots do not block each other's routes.
         free = free.filter((c) => c.cy % 3 === 1 && c.cx % 13 !== 1);

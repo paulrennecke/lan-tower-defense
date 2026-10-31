@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Game, SELL_REFUND } from '../server/game';
 import { TOWER_BY_ID } from '../shared/data/classes';
 import { FIRST_COUNTDOWN, START_GOLD, START_LIVES, VICTORY_WAVE } from '../shared/data/waves';
-import { MAP_H, MAP_W, SECTION_OF, SPAWNS, cellIndex, setActiveMap, traceRoute } from '../shared/map';
+import { EXIT, FLY_PASSABLE, MAP_H, MAP_W, SECTION_OF, SPAWNS, cellIndex, setActiveMap, traceRoute } from '../shared/map';
 
 // These tests use the coordinates of the four-lane Nordend map.
 setActiveMap('nordend');
@@ -11,14 +11,18 @@ import { simulate } from '../tools/balance';
 const mkGame = (classes: string[], hooks = {}) =>
   new Game(classes.map((c, i) => ({ id: 'p' + i, name: 'P' + i, color: 0, classId: c })), hooks);
 
+/** Lane the player's creeps come from in tests: players are dealt to the active lanes in order. */
+function laneOf(g: Game, pid: string) {
+  return g.lanes[[...g.players.keys()].indexOf(pid) % g.lanes.length];
+}
+
 /** Point at roughly distance d along the creep route of the player's lane. */
 function routePoint(g: Game, pid: string, d: number) {
-  const lane = g.sectionOwners.findIndex((o) => o === pid) % 4;
+  const lane = laneOf(g, pid);
   const route = traceRoute(g.flow, g.blocked, SPAWNS[lane].x, SPAWNS[lane].y);
   return route[Math.min(route.length - 1, Math.round(d))];
 }
 
-const laneOf = (g: Game, pid: string) => g.sectionOwners.findIndex((o) => o === pid) % 4;
 
 /** Own buildable cell closest to the given route distance. */
 function cellNear(g: Game, pid: string, d: number) {
@@ -26,7 +30,7 @@ function cellNear(g: Game, pid: string, d: number) {
   let best: { cx: number; cy: number } | null = null, bestD = Infinity;
   for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
     const s = SECTION_OF[cellIndex(cx, cy)];
-    if (s < 0 || g.sectionOwners[s] !== pid || g.canBuildAt(pid, cx, cy)) continue;
+    if (s < 0 || g.canBuildAt(pid, cx, cy)) continue;
     const dist = Math.hypot(cx + 0.5 - target.x, cy + 0.5 - target.y);
     if (dist < bestD) { bestD = dist; best = { cx, cy }; }
   }
@@ -39,9 +43,7 @@ describe('Game commands', () => {
   it('validates building', () => {
     const g = mkGame(['human', 'orc']);
     const own = cellNear(g, 'p0', 10);
-    const foreign = cellNear(g, 'p1', 10);
     expect(g.build('p0', 'o_spear', own.cx, own.cy)).toMatch(/Klasse/);
-    expect(g.build('p0', 'h_watch', foreign.cx, foreign.cy)).toMatch(/Bauabschnitt/);
     expect(g.build('p0', 'h_mage', own.cx, own.cy)).toMatch(/erforschen/i);
     expect(g.build('p0', 'h_watch', 2, 2)).toMatch(/nicht gebaut/);
     expect(g.build('p0', 'h_watch', own.cx, own.cy)).toBeNull();
@@ -52,18 +54,60 @@ describe('Game commands', () => {
     expect(g.build('p0', 'h_watch', other.cx, other.cy)).toMatch(/Gold/);
   });
 
-  it('free building: with ownZonesOnly off everyone may build in every zone', () => {
-    const g = new Game([{ id: 'p0', name: 'P0', color: 0, classId: 'human' }, { id: 'p1', name: 'P1', color: 0, classId: 'orc' }], {}, { ownZonesOnly: false });
-    const foreign = cellNear(g, 'p1', 10);
-    expect(g.build('p0', 'h_watch', foreign.cx, foreign.cy)).toBeNull();
-    // Unowned zones of inactive lanes are buildable, too.
-    expect(g.sectionOwners[0]).toBe('');
+  it('everybody may build everywhere (no fixed areas)', () => {
+    const g = mkGame(['human', 'orc']);
+    // A cell in the lane of player 1 – player 0 may build there, too.
+    const c = cellNear(g, 'p1', 10);
+    expect(g.build('p0', 'h_watch', c.cx, c.cy)).toBeNull();
+    // Zones of lanes without creeps are buildable as well.
     expect(g.build('p0', 'h_block', 5, 5)).toBeNull();
-    const strict = mkGame(['human', 'orc']);
-    expect(strict.build('p0', 'h_block', 5, 5)).toMatch(/Bauabschnitt/);
-    expect(Game.fromSave(JSON.parse(JSON.stringify(g.toSave()))).options.ownZonesOnly).toBe(false);
   });
 
+  it('towers of disconnected players can be used by everybody', () => {
+    const g = mkGame(['human', 'orc']);
+    g.players.get('p1')!.gold = 1000;
+    const c = cellNear(g, 'p0', 10);
+    expect(g.build('p0', 'h_watch', c.cx, c.cy)).toBeNull();
+    const t = [...g.towers.values()][0];
+    expect(g.upgrade('p1', t.id)).toMatch(/Ungültig/);
+    expect(g.sell('p1', t.id)).toMatch(/Ungültig/);
+    g.setConnected('p0', false);
+    expect(g.setMode('p1', t.id, 'strong')).toBeNull();
+    expect(g.upgrade('p1', t.id)).toBeNull();
+    expect(t.level).toBe(1);
+    const gold = g.players.get('p1')!.gold;
+    expect(g.sell('p1', t.id)).toBeNull();
+    expect(g.players.get('p1')!.gold).toBeGreaterThan(gold);
+    expect(g.towers.size).toBe(0);
+  });
+
+  it('gold can be sent to other players', () => {
+    const events: string[] = [];
+    const g = mkGame(['human', 'orc'], { event: (_k: string, text: string) => events.push(text) });
+    expect(g.gift('p0', 'p0', 10)).toMatch(/Ungültig/);
+    expect(g.gift('p0', 'zz', 10)).toMatch(/Ungültig/);
+    expect(g.gift('p0', 'p1', -5)).toMatch(/Betrag/);
+    expect(g.gift('p0', 'p1', 1.5)).toMatch(/Betrag/);
+    expect(g.gift('p0', 'p1', START_GOLD + 1)).toMatch(/Gold/);
+    expect(g.gift('p0', 'p1', 100)).toBeNull();
+    expect(g.players.get('p0')!.gold).toBe(START_GOLD - 100);
+    expect(g.players.get('p1')!.gold).toBe(START_GOLD + 100);
+    expect(g.players.get('p0')!.goldSent).toBe(100);
+    expect(events[0]).toMatch(/100 Gold/);
+  });
+
+  it('players can join a running game and make it harder', () => {
+    const g = mkGame(['human']);
+    g.players.get('p0')!.gold = 900;
+    const before = g.spawnEnemy('ghoul', 5, 1, 1);
+    const p = g.addPlayer({ id: 'late', name: 'Late', color: 1, classId: 'orc' });
+    expect(p.gold).toBe(900);
+    expect(g.players.size).toBe(2);
+    const after = g.spawnEnemy('ghoul', 5, 1, 1);
+    expect(after.maxHp).toBeGreaterThan(before.maxHp);
+    const c = cellNear(g, 'late', 8);
+    expect(g.build('late', 'o_spear', c.cx, c.cy)).toBeNull();
+  });
   it('upgrades and sells with refund', () => {
     const g = mkGame(['human']);
     const c = cellNear(g, 'p0', 10);
@@ -140,7 +184,7 @@ describe('Game simulation', () => {
     expect(lives).toBe(g.lives);
     expect(g.lives).toBe(START_LIVES - 1);
   });
-  it('kill gold goes to the lane defenders and leaks cost lives', () => {
+  it('kill gold is shared by all players (split by lane count) and leaks cost lives', () => {
     let over = false;
     const g = mkGame(['human', 'orc'], { gameOver: () => { over = true; } });
     expect(g.lanes).toEqual([1, 2]);
@@ -151,8 +195,9 @@ describe('Game simulation', () => {
     run(g, 15);
     expect(g.players.get('p0')!.kills).toBeGreaterThan(0);
     expect(g.players.get('p0')!.gold).toBeGreaterThan(10000 - 3 * TOWER_BY_ID.h_watch.cost);
-    // p1 defends another lane and has no towers: no kill gold from p0's lane.
-    expect(g.players.get('p1')!.gold).toBe(goldBefore);
+    // p1 built nothing but still gets its share of the bounty.
+    expect(g.players.get('p1')!.gold).toBeGreaterThan(goldBefore);
+    expect(g.players.get('p1')!.kills).toBe(0);
     // Let everything else leak.
     for (const t of [...g.towers.values()]) g.sell('p0', t.id);
     g.lives = 2;
@@ -217,6 +262,51 @@ describe('Game simulation', () => {
     expect(g.lives).toBe(START_LIVES);
   });
 
+  it('flyers fly around cliffs (but over towers)', () => {
+    setActiveMap('x9');
+    try {
+      const g = mkGame(['human']);
+      g.players.get('p0')!.gold = 10000;
+      // Towers in the open field do not stop flyers.
+      for (let x = 17; x < 33; x++) g.build('p0', 'h_block', x, 9);
+      const bat = g.spawnEnemy('bat', 1, 1, 1);
+      let rockSteps = 0, t = 0;
+      while (!bat.dead && t < 90) {
+        g.tick(0.05); t += 0.05;
+        if (!bat.dead && !FLY_PASSABLE[cellIndex(Math.floor(bat.x), Math.floor(bat.y))]) rockSteps++;
+      }
+      expect(rockSteps).toBe(0);
+      expect(bat.dead).toBe(true);
+      expect(g.lives).toBe(START_LIVES - 1);
+      expect(EXIT[cellIndex(Math.floor(bat.x), Math.floor(bat.y))]).toBe(1);
+      // The straight line from the portal to the gate crosses the rock trench: the flight is clearly longer.
+      expect(t).toBeGreaterThan(50 / 3.6 + 2);
+    } finally {
+      setActiveMap('nordend');
+    }
+  });
+
+  it('collects end-of-game statistics', () => {
+    const g = mkGame(['human', 'orc']);
+    g.players.get('p0')!.gold = 10000;
+    for (const d of [3, 8]) { const c = cellNear(g, 'p0', d); g.build('p0', 'h_watch', c.cx, c.cy); }
+    g.upgrade('p0', [...g.towers.keys()][0]);
+    g.gift('p0', 'p1', 50);
+    g.startWave();
+    run(g, 40);
+    const { stats, summary } = g.endStats();
+    const p0 = stats.find((x) => x.id === 'p0')!;
+    expect(p0.towersBuilt).toBe(2);
+    expect(p0.upgrades).toBe(1);
+    expect(p0.goldSent).toBe(50);
+    expect(p0.kills).toBeGreaterThan(0);
+    expect(summary.creepsKilled).toBeGreaterThan(0);
+    expect(summary.map).toBe('nordend');
+    expect(summary.players).toBe(2);
+    expect(summary.topTower?.def).toBe('h_watch');
+    expect(summary.topKilled[0][1]).toBeGreaterThan(0);
+  });
+
   it('bots survive the first waves (balance smoke test)', () => {
     const r = simulate(2, 8);
     expect(r.wave).toBeGreaterThanOrEqual(8);
@@ -261,7 +351,7 @@ describe('Pause, save & load', () => {
     expect(r.time).toBe(g.time);
     expect(r.wave).toBe(g.wave);
     expect(r.lives).toBe(g.lives);
-    expect(r.sectionOwners).toEqual(g.sectionOwners);
+    expect(r.lanes).toEqual(g.lanes);
     expect(r.fullState('p0', new Map(), 0).towers).toEqual(g.fullState('p0', new Map(), 0).towers);
     expect(r.playerStats().map((p) => ({ ...p, ready: false }))).toEqual(g.playerStats().map((p) => ({ ...p, ready: false })));
     const { fx: _a, paused: _b, ...rs } = r.snapshot();

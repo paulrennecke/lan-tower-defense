@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Kooperatives 3D LAN Tower Defense für bis zu 16 Spieler (WC3-TD-inspiriert)",
+  "description": "LAN TD – kooperatives 3D-Maze-Tower-Defense für bis zu 16 Spieler (Wintermaul-inspiriert)",
   "scripts": {
     "build": "vite build",
     "start": "vite build && tsx server/index.ts",

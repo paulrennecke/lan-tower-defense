@@ -4,8 +4,8 @@ import { CLASSES, TOWER_BY_ID, RESEARCH_BY_ID } from '../shared/data/classes';
 import { ENEMY_BY_ID, ENEMIES } from '../shared/data/enemies';
 import { getWave, playerHpMul, VICTORY_WAVE, waveBaseHp } from '../shared/data/waves';
 import {
-  assignSections, computeFlow, lanesOf, MAP_H, MAP_W, routeLength, SECTION_COUNT, SECTION_OF, SPAWNS, WALKABLE, cellIndex,
-  setActiveMap, spawnsConnected, traceRoute, MAP_ID, EXIT, LANES, LANE_LAST_ZONE,
+  activeLanes, computeFlow, FLY_FLOW, flyTarget, MAP_H, MAP_W, routeLength, SECTION_COUNT, SECTION_OF, SPAWNS, WALKABLE, cellIndex,
+  setActiveMap, spawnsConnected, traceRoute, MAP_ID, EXIT, LANES,
 } from '../shared/map';
 import { MAPS } from '../shared/maps';
 import { auraBuffs, effectiveStats } from '../shared/stats';
@@ -84,15 +84,13 @@ describe('map', () => {
       for (const c of counts) expect(c, def.id).toBeGreaterThan(30);
       expect(EXIT.some((e) => e === 1)).toBe(true);
       expect(spawnsConnected(computeFlow(new Uint8Array(MAP_W * MAP_H))), def.id).toBe(true);
-      expect(LANE_LAST_ZONE.every((z) => z >= 0)).toBe(true);
       for (let n = 1; n <= 16; n++) {
-        const ids = Array.from({ length: n }, (_, i) => 'p' + i);
-        const owners = assignSections(ids);
-        for (const id of ids) expect(owners.includes(id), `${def.id} n=${n} ${id}`).toBe(true);
-        const lanes = lanesOf(owners);
-        expect(lanes).toEqual(def.lanesFor(n));
+        const lanes = activeLanes(n);
+        expect(lanes.length, `${def.id} n=${n}`).toBeGreaterThan(0);
         expect(lanes.every((l) => l < LANES)).toBe(true);
       }
+      // Flyers can reach the exit from every spawn.
+      for (const sp of def.spawns) expect(Number.isFinite(FLY_FLOW[cellIndex(Math.floor(sp.x), Math.floor(sp.y))]), def.id).toBe(true);
     }
     setActiveMap('nordend');
   });
@@ -119,15 +117,27 @@ describe('map', () => {
     expect(spawnsConnected(computeFlow(blocked))).toBe(false);
   });
 
-  it('assigns one lane per player up to four players', () => {
-    expect(lanesOf(assignSections(['a']))).toEqual([1]);
-    expect(assignSections(['a']).filter((x) => x === 'a')).toHaveLength(4);
-    const two = assignSections(['a', 'b']);
-    expect(lanesOf(two)).toEqual([1, 2]);
-    expect(two.every((o, s) => !o || o === (s % 4 === 1 ? 'a' : 'b'))).toBe(true);
-    expect(lanesOf(assignSections(['a', 'b', 'c', 'd', 'e']))).toEqual([0, 1, 2, 3]);
-    const sixteen = assignSections(Array.from({ length: 16 }, (_, i) => 'p' + i));
-    expect(new Set(sixteen).size).toBe(16);
+  it('activates more lanes with more players', () => {
+    setActiveMap('nordend');
+    expect(activeLanes(1)).toEqual([1]);
+    expect(activeLanes(2)).toEqual([1, 2]);
+    expect(activeLanes(4)).toEqual([0, 1, 2, 3]);
+    expect(activeLanes(16)).toEqual([0, 1, 2, 3]);
+  });
+
+  it('flyers are routed around cliffs, towers do not matter to them', () => {
+    setActiveMap('x9');
+    // From the middle portal the straight line to the gate crosses the rock trench: the target must lie to the side.
+    let x = SPAWNS[1].x, y = SPAWNS[1].y, steps = 0;
+    for (; steps < 400; steps++) {
+      const t = flyTarget(x, y);
+      if (t.done) break;
+      const d = Math.hypot(t.x - x, t.y - y);
+      x += ((t.x - x) / d) * Math.min(d, 0.5); y += ((t.y - y) / d) * Math.min(d, 0.5);
+      expect(FLY_FLOW[cellIndex(Math.floor(x), Math.floor(y))]).toBeLessThan(Infinity);
+    }
+    expect(steps).toBeLessThan(400);
+    setActiveMap('nordend');
   });
 });
 

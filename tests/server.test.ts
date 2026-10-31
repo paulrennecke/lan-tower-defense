@@ -34,14 +34,14 @@ describe('server protocol', () => {
     a.send({ t: 'start' });
     const game = await b.wait('game');
     expect(game.state.players).toHaveLength(2);
-    expect(game.state.sectionOwners).toHaveLength(16);
+    expect(game.state.lanes.length).toBeGreaterThan(0);
 
     // Build in an own section.
     const { SECTION_OF, MAP_W, MAP_H, cellIndex } = await import('../shared/map');
     let cell: { cx: number; cy: number } | null = null;
     for (let cy = 0; cy < MAP_H && !cell; cy++) for (let cx = 0; cx < MAP_W && !cell; cx++) {
       const s = SECTION_OF[cellIndex(cx, cy)];
-      if (s >= 0 && game.state.sectionOwners[s] === wa.you) cell = { cx, cy };
+      if (s >= 0) cell = { cx, cy };
     }
     a.send({ t: 'build', def: 'h_watch', cx: cell!.cx, cy: cell!.cy });
     const tower = await b.wait('tower');

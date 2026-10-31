@@ -123,7 +123,7 @@ export class World {
     this.mapTexture = new THREE.CanvasTexture(this.mapCanvas);
     this.mapTexture.colorSpace = THREE.SRGBColorSpace;
     this.mapTexture.anisotropy = 8;
-    this.paintMap([], new Map(), '');
+    this.paintMap();
     this.buildStatic(this.staticGroup);
     this.mapId = MAP_ID;
   }
@@ -308,7 +308,7 @@ export class World {
   }
 
   /** Paints snow, trodden lanes and the build zones of every player onto the map texture. */
-  paintMap(sectionOwners: string[], colors: Map<string, number>, you: string, showZones = true) {
+  paintMap(showGrid = true) {
     const ctx = this.mapCanvas.getContext('2d')!;
     const S = 24;
     const rand = mulberry(42);
@@ -344,51 +344,13 @@ export class World {
         ctx.stroke();
       }
     }
-    // Zone tint, grid and borders can be hidden by the player.
-    if (showZones) this.paintZones(ctx, S, sectionOwners, colors, you);
+    // Grid on buildable cells (can be hidden by the player).
+    if (showGrid) {
+      ctx.strokeStyle = 'rgba(40,60,90,0.16)';
+      ctx.lineWidth = 1;
+      for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (isBuildable(x, y)) ctx.strokeRect(x * S + 0.5, y * S + 0.5, S - 1, S - 1);
+    }
     this.mapTexture.needsUpdate = true;
-  }
-
-  private paintZones(ctx: CanvasRenderingContext2D, S: number, sectionOwners: string[], colors: Map<string, number>, you: string) {
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        const i = cellIndex(x, y);
-        const s = SECTION_OF[i];
-        if (s < 0) continue;
-        const owner = sectionOwners[s];
-        if (sectionOwners.length && !owner) {
-          ctx.fillStyle = 'rgba(90,110,135,0.3)';
-          ctx.fillRect(x * S, y * S, S, S);
-          continue;
-        }
-        if (!owner) continue;
-        const col = colors.get(owner) ?? 0xffffff;
-        ctx.fillStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.07 : 0.03})`;
-        ctx.fillRect(x * S, y * S, S, S);
-      }
-    }
-    // Grid on buildable cells.
-    ctx.strokeStyle = 'rgba(40,60,90,0.12)';
-    ctx.lineWidth = 1;
-    for (let y = 0; y < MAP_H; y++) for (let x = 0; x < MAP_W; x++) if (isBuildable(x, y)) ctx.strokeRect(x * S + 0.5, y * S + 0.5, S - 1, S - 1);
-    // Zone borders.
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        const s = SECTION_OF[cellIndex(x, y)];
-        if (s < 0 || !sectionOwners[s]) continue;
-        const owner = sectionOwners[s];
-        const col = colors.get(owner) ?? 0xffffff;
-        ctx.strokeStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.95 : 0.5})`;
-        ctx.lineWidth = owner === you ? 3 : 2;
-        const same = (nx: number, ny: number) => nx >= 0 && ny >= 0 && nx < MAP_W && ny < MAP_H && SECTION_OF[cellIndex(nx, ny)] === s;
-        ctx.beginPath();
-        if (!same(x, y - 1)) { ctx.moveTo(x * S, y * S + 1); ctx.lineTo(x * S + S, y * S + 1); }
-        if (!same(x, y + 1)) { ctx.moveTo(x * S, y * S + S - 1); ctx.lineTo(x * S + S, y * S + S - 1); }
-        if (!same(x - 1, y)) { ctx.moveTo(x * S + 1, y * S); ctx.lineTo(x * S + 1, y * S + S); }
-        if (!same(x + 1, y)) { ctx.moveTo(x * S + S - 1, y * S); ctx.lineTo(x * S + S - 1, y * S + S); }
-        ctx.stroke();
-      }
-    }
   }
 
   addAnimated(o: THREE.Object3D) { this.animated.push(o); }
@@ -403,9 +365,9 @@ export class World {
     const el = this.renderer.domElement;
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-      this.keys.add(e.key);
+      this.keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
     });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.key));
+    window.addEventListener('keyup', (e) => this.keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key));
     window.addEventListener('blur', () => this.keys.clear());
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -436,10 +398,10 @@ export class World {
   private updateCamera(dt: number) {
     const speed = this.camDist * 1.2 * dt;
     let dx = 0, dz = 0;
-    if (this.keys.has('ArrowLeft')) dx -= 1;
-    if (this.keys.has('ArrowRight')) dx += 1;
-    if (this.keys.has('ArrowUp')) dz -= 1;
-    if (this.keys.has('ArrowDown')) dz += 1;
+    if (this.keys.has('ArrowLeft') || this.keys.has('a')) dx -= 1;
+    if (this.keys.has('ArrowRight') || this.keys.has('d')) dx += 1;
+    if (this.keys.has('ArrowUp') || this.keys.has('w')) dz -= 1;
+    if (this.keys.has('ArrowDown') || this.keys.has('s')) dz += 1;
     if (this.edgePan && this.mouse.inside && document.hasFocus() && !this.dragging) {
       const m = 6;
       if (this.mouse.x <= m) dx -= 1;

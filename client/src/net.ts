@@ -7,6 +7,7 @@ export class Net {
   private handlers: Handler[] = [];
   private statusHandlers: ((connected: boolean) => void)[] = [];
   connected = false;
+  private stopped = false;
 
   constructor(private getHello: () => ClientMsg) {}
 
@@ -28,8 +29,14 @@ export class Net {
       if (this.ws !== ws) return;
       this.connected = false;
       this.statusHandlers.forEach((h) => h(false));
-      setTimeout(() => this.connect(), 2000);
+      if (!this.stopped) setTimeout(() => this.connect(), 2000);
     };
+  }
+
+  /** Closes the connection for good (no automatic reconnect). */
+  stop() {
+    this.stopped = true;
+    this.ws?.close();
   }
 
   send(msg: ClientMsg) {

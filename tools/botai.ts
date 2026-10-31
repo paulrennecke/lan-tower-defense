@@ -1,5 +1,5 @@
 import { CLASS_BY_ID, towerDps, type TowerDef } from '../shared/data/classes';
-import { GATE, MAP_DEF, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, cellIndex, computeFlow, lanesOf, nextCell, traceRoute } from '../shared/map';
+import { FLY_FLOW, FLY_PASSABLE, MAP_DEF, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, cellIndex, computeFlow, nextCell, traceRoute } from '../shared/map';
 import type { Game } from '../server/game';
 
 /**
@@ -58,7 +58,15 @@ export function botAct(game: Game, pid: string, rnd: () => number = Math.random)
   const p = game.players.get(pid)!;
   const cls = CLASS_BY_ID[p.classId];
   const towers = game.towersOf(pid);
-  const zones = game.sectionOwners.map((o, s) => (o === pid ? s : -1)).filter((s) => s >= 0);
+  // Bots share out the active lanes (round-robin); zones of inactive lanes that are marked shared go to the nearest lane.
+  const idx = [...game.players.keys()].indexOf(pid);
+  const lane = game.lanes[idx % game.lanes.length];
+  const zoneLane = (z: number) => {
+    const home = MAP_DEF.zoneHome[z];
+    if (game.lanes.includes(home)) return home;
+    return MAP_DEF.shared[z] ? [...game.lanes].sort((a, b) => Math.abs(a - home) - Math.abs(b - home) || a - b)[0] : -1;
+  };
+  const zones = Array.from({ length: 16 }, (_, z) => z).filter((z) => zoneLane(z) === lane);
   const priority: number[] = [];
   for (const [x0, y0, x1, y1] of MAP_DEF.botWalls ?? []) {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (zones.includes(SECTION_OF[cellIndex(x, y)])) priority.push(cellIndex(x, y));
@@ -126,15 +134,11 @@ export function botAct(game: Game, pid: string, rnd: () => number = Math.random)
 /** Attack towers go onto maze wall cells (or replace a block there) where they cover the most route. */
 function buildBest(game: Game, pid: string, def: TowerDef, plan: number[][]) {
   const range = def.levels[0].range || 4;
-  const lanes = lanesOf(game.sectionOwners);
+  const lanes = game.lanes;
+  const empty = new Uint8Array(MAP_W * MAP_H);
   const ground = lanes.map((l) => traceRoute(game.flow, game.blocked, SPAWNS[l].x, SPAWNS[l].y));
-  // Flyers go straight from the portal to the gate – air towers belong next to that line.
-  const flight = lanes.map((l) => {
-    const s = SPAWNS[l], pts: { x: number; y: number }[] = [];
-    const n = Math.ceil(Math.hypot(GATE.x - s.x, GATE.y - s.y));
-    for (let i = 0; i <= n; i++) pts.push({ x: s.x + ((GATE.x - s.x) * i) / n, y: s.y + ((GATE.y - s.y) * i) / n });
-    return pts;
-  });
+  // Flyers go around cliffs but straight over towers – air towers belong next to their route.
+  const flight = lanes.map((l) => traceRoute(FLY_FLOW, empty, SPAWNS[l].x, SPAWNS[l].y, 2000, FLY_PASSABLE));
   const st = def.levels[0];
   const routes = st.ground ? (st.air ? [...ground, ...flight] : ground) : flight;
   const cover = (c: number) => {
@@ -149,6 +153,7 @@ function buildBest(game: Game, pid: string, def: TowerDef, plan: number[][]) {
   for (const c of plan.flat()) {
     const occ = occupant(c);
     if (occ && occ.def !== blockId) continue;
+    if (!occ && game.blocked[c]) continue;
     if (!occ && SECTION_OF[c] < 0) continue;
     const score = cover(c) + Math.random();
     if (!best || score > best.score) best = { c, score, replace: occ?.id };

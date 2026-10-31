@@ -5,9 +5,9 @@ import { networkInterfaces } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { CLASS_BY_ID } from '../shared/data/classes';
+import { CLASSES, CLASS_BY_ID } from '../shared/data/classes';
 import {
-  DEFAULT_OPTIONS, MAX_PLAYERS, PLAYER_COLORS, type ClientMsg, type GameOptions, type GamePhase, type LobbyPlayer, type SaveInfo, type ServerMsg, type TargetMode,
+  MAX_PLAYERS, PLAYER_COLORS, type ClientMsg, type GamePhase, type LobbyPlayer, type SaveInfo, type ServerMsg, type TargetMode,
 } from '../shared/protocol';
 import { Game, type GameHooks, type GamePlayer, type GameSave } from './game';
 import { setActiveMap } from '../shared/map';
@@ -27,18 +27,25 @@ const entries = new Map<string, Entry>();
 let hostId: string | null = null;
 let phase: GamePhase = 'lobby';
 let mapId = DEFAULT_MAP;
-let options: GameOptions = { ...DEFAULT_OPTIONS };
 let game: Game | null = null;
-let highscore = loadHighscore();
+/** Record wave per map. */
+const highscores: Record<string, number> = loadHighscores();
 
-function loadHighscore(): number {
-  try { return JSON.parse(readFileSync(HIGHSCORE_FILE, 'utf8')).wave ?? 0; } catch { return 0; }
+function loadHighscores(): Record<string, number> {
+  try {
+    const data = JSON.parse(readFileSync(HIGHSCORE_FILE, 'utf8'));
+    return data && typeof data.maps === 'object' ? data.maps : {};
+  } catch { return {}; }
 }
-function saveHighscore(wave: number) {
-  if (wave <= highscore) return;
-  highscore = wave;
-  try { writeFileSync(HIGHSCORE_FILE, JSON.stringify({ wave, date: new Date().toISOString() })); } catch { /* ignore */ }
+const highscoreOf = (map: string) => highscores[map] ?? 0;
+/** Stores the record if the wave beats it; returns true for a new record. */
+function saveHighscore(map: string, wave: number): boolean {
+  if (wave <= highscoreOf(map)) return false;
+  highscores[map] = wave;
+  try { writeFileSync(HIGHSCORE_FILE, JSON.stringify({ maps: highscores, date: new Date().toISOString() })); } catch { /* ignore */ }
+  return true;
 }
+const randomClass = () => CLASSES[Math.floor(Math.random() * CLASSES.length)].id;
 
 // ------------------------------------------------------------------ save games
 
@@ -53,6 +60,7 @@ function listSaves(): SaveInfo[] {
     if (!f.endsWith('.json')) continue;
     try {
       const data = JSON.parse(readFileSync(join(SAVE_DIR, f), 'utf8')) as SaveFile;
+      if (!data?.info?.date || !data.game) continue;
       list.push({ ...data.info, id: f.slice(0, -5) });
     } catch { /* skip broken files */ }
   }
@@ -112,16 +120,16 @@ function sysChat(text: string) {
 }
 
 function lobbyMsg(): ServerMsg {
-  const players: LobbyPlayer[] = [...entries.values()].map(({ id, name, color, classId, ready, connected, spectator }) => ({
-    id, name, color, classId, ready, connected, spectator,
+  const players: LobbyPlayer[] = [...entries.values()].map(({ id, name, color, classId, ready, connected, spectator, pos }) => ({
+    id, name, color, classId, ready, connected, spectator, pos,
   }));
-  return { t: 'lobby', players, hostId, phase, highscore, saves, map: mapId, options };
+  return { t: 'lobby', players, hostId, phase, highscore: highscoreOf(phase === 'lobby' ? mapId : game?.mapId ?? mapId), saves, map: mapId };
 }
 function broadcastLobby() { broadcast(lobbyMsg()); }
 
 function sendGameState(e: Entry) {
   if (!game) return;
-  send(e.ws, { t: 'game', state: game.fullState(e.id, entries, highscore) });
+  send(e.ws, { t: 'game', state: game.fullState(e.id, entries, highscoreOf(game.mapId)) });
   // Players who (re)connect after the game ended must see the game-over screen, too.
   if (phase === 'gameover' && lastGameOver) {
     send(e.ws, game.snapshot());
@@ -165,7 +173,7 @@ function gameHooks(): GameHooks {
 function startGame() {
   const players = activePlayers().filter((e) => e.connected);
   setActiveMap(mapId);
-  runGame(new Game(players.map((p) => ({ id: p.id, name: p.name, color: p.color, classId: p.classId! })), gameHooks(), options));
+  runGame(new Game(players.map((p) => ({ id: p.id, name: p.name, color: p.color, classId: p.classId! })), gameHooks()));
   sysChat(`Das Spiel beginnt mit ${players.length} Spieler(n)! Baut eure Verteidigung – die erste Welle kommt bald.`);
 }
 
@@ -181,7 +189,6 @@ function loadGame(id: string, host: Entry): string | null {
     return 'Spielstand konnte nicht geladen werden: ' + (e as Error).message;
   }
   mapId = g.mapId;
-  options = { ...g.options };
   // Connected players take over the saved slots: same name first, then in join order (host first).
   const free = [...g.players.values()];
   const lobby = activePlayers().filter((e) => e.connected).sort((a, b) => Number(b === host) - Number(a === host));
@@ -251,13 +258,10 @@ function endGame(wave: number, victory: boolean) {
   if (loop) clearInterval(loop);
   loop = null;
   const reached = Math.max(0, wave - 1);
-  saveHighscore(reached);
+  const newRecord = saveHighscore(game.mapId, reached);
   phase = 'gameover';
   broadcast(game.snapshot());
-  lastGameOver = {
-    t: 'gameOver', wave: reached, victory, highscore,
-    stats: [...game.players.values()].map((p) => ({ id: p.id, name: p.name, color: p.color, kills: p.kills, damage: Math.round(p.damage), leaks: p.leaks })),
-  };
+  lastGameOver = { t: 'gameOver', wave: reached, victory, highscore: highscoreOf(game.mapId), newRecord, ...game.endStats() };
   broadcast(lastGameOver);
   broadcastLobby();
 }
@@ -303,8 +307,8 @@ wss.on('connection', (ws) => {
       } else {
         const full = activePlayers().length >= MAX_PLAYERS;
         me = {
-          id: randomBytes(4).toString('hex'), name: cleanName(msg.name), color: freeColor(), classId: null,
-          ready: false, connected: true, spectator: full || phase !== 'lobby', token: randomBytes(12).toString('hex'), ws, leftAt: 0,
+          id: randomBytes(4).toString('hex'), name: cleanName(msg.name), color: freeColor(), classId: randomClass(),
+          ready: false, connected: true, spectator: full || phase !== 'lobby', token: randomBytes(12).toString('hex'), ws, leftAt: 0, pos: null,
         };
         entries.set(me.id, me);
         // In a loaded game, newcomers take over unclaimed player slots (same name preferred).
@@ -315,7 +319,7 @@ wss.on('connection', (ws) => {
           claimSlot(me, slot, game);
           entries.set(me.id, me);
         }
-        sysChat(`${me.name} ist beigetreten${me.spectator ? ' (Zuschauer)' : slot ? ` und übernimmt einen freien Platz` : ''}.`);
+        sysChat(`${me.name} ist beigetreten${me.spectator ? (phase === 'lobby' ? ' (Zuschauer)' : ' (kann über das Baumenü mitspielen)') : slot ? ` und übernimmt einen freien Platz` : ''}.`);
       }
       ensureHost();
       send(ws, { t: 'welcome', you: me.id, token: me.token });
@@ -340,12 +344,45 @@ wss.on('connection', (ws) => {
         if (phase === 'lobby' && !p.spectator) { p.ready = !!msg.ready && !!p.classId; broadcastLobby(); }
         break;
       case 'setMap':
-        if (phase === 'lobby' && p.id === hostId && MAP_BY_ID[msg.id]) { mapId = msg.id; broadcastLobby(); }
+        if (phase === 'lobby' && p.id === hostId && MAP_BY_ID[msg.id]) {
+          mapId = msg.id;
+          for (const e of entries.values()) e.pos = null;
+          broadcastLobby();
+        }
         break;
-      case 'setOptions': {
-        if (phase !== 'lobby' || p.id !== hostId || !msg.options) return;
-        for (const k of Object.keys(DEFAULT_OPTIONS) as (keyof GameOptions)[]) if (typeof msg.options[k] === 'boolean') options[k] = msg.options[k]!;
+      case 'setPos':
+        if (phase === 'lobby' && !p.spectator && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
+          p.pos = { x: Math.min(1, Math.max(0, msg.x)), y: Math.min(1, Math.max(0, msg.y)) };
+          broadcastLobby();
+        }
+        break;
+      case 'kick': {
+        if (phase !== 'lobby' || p.id !== hostId) return err('Nur der Host kann Spieler entfernen.');
+        const target = entries.get(String(msg.id));
+        if (!target || target.id === p.id) return;
+        send(target.ws, { t: 'kicked' });
+        target.ws?.close();
+        entries.delete(target.id);
+        sysChat(`${target.name} wurde vom Host entfernt.`);
+        ensureHost();
         broadcastLobby();
+        break;
+      }
+      case 'gift':
+        if (game && phase === 'playing' && !p.spectator) err(game.gift(p.id, String(msg.to), Number(msg.amount)));
+        break;
+      case 'joinGame': {
+        // Late join: spectators become players of the running game.
+        if (!game || phase !== 'playing' || !p.spectator || !CLASS_BY_ID[msg.classId]) return;
+        if (game.players.size >= MAX_PLAYERS) return err('Das Spiel ist voll.');
+        p.classId = msg.classId;
+        p.spectator = false;
+        game.addPlayer({ id: p.id, name: p.name, color: p.color, classId: msg.classId });
+        sysChat(`${p.name} steigt als ${CLASS_BY_ID[msg.classId].name} ins laufende Spiel ein.`);
+        broadcastLobby();
+        sendGameState(p);
+        const joined = game.fullState(p.id, entries, 0).players.find((x) => x.id === p.id);
+        if (joined) for (const e of entries.values()) if (e !== p) send(e.ws, { t: 'joined', player: joined });
         break;
       }
       case 'start': {
@@ -462,7 +499,7 @@ setInterval(() => {
 server.listen(PORT, '0.0.0.0', () => {
   const ips = Object.values(networkInterfaces()).flat()
     .filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i!.address);
-  console.log('\n  ⚔  LAN Tower Defense läuft!\n');
+  console.log('\n  ❄  LAN TD läuft!\n');
   console.log(`  Lokal:   http://localhost:${PORT}`);
   for (const ip of ips) console.log(`  Im LAN:  http://${ip}:${PORT}`);
   console.log('\n  Mitspieler öffnen die LAN-Adresse im Browser (Chrome/Firefox/Edge).');

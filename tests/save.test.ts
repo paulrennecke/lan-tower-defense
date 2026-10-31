@@ -14,10 +14,10 @@ afterAll(() => {
   rmSync(SAVE_DIR, { recursive: true, force: true });
 });
 
-function ownCell(sectionOwners: string[], pid: string) {
+function ownCell() {
   for (let cy = 0; cy < MAP_H; cy++) for (let cx = 0; cx < MAP_W; cx++) {
     const s = SECTION_OF[cellIndex(cx, cy)];
-    if (s >= 0 && sectionOwners[s] === pid) return { cx, cy };
+    if (s >= 0) return { cx, cy };
   }
   throw new Error('no cell');
 }
@@ -46,7 +46,7 @@ describe('pause, save & load over the network', () => {
     // Pause blocks building, resume allows it again.
     b.send({ t: 'pause', paused: true });
     await a.wait('snap', (s) => s.paused === 'Bob');
-    const cell = ownCell(g.state.sectionOwners, wa.you);
+    const cell = ownCell();
     a.send({ t: 'build', def: 'h_watch', cx: cell.cx, cy: cell.cy });
     await a.wait('error', (m) => m.msg.includes('pausiert'));
     a.send({ t: 'pause', paused: false });
