@@ -225,6 +225,7 @@ export class GameView {
     this.setPaused(null);
     this.selected = null;
     this.buildDef = null;
+    this.world.hideGhost();
     this.ent.clear();
     for (const t of state.towers) this.ent.setTower(t);
     for (const [id, x, y] of state.mines) this.ent.addMine(id, x, y);
@@ -769,7 +770,9 @@ export class GameView {
       const occupied = [...this.ent.towers.values()].some((t) => t.info.cx === h.cx && t.info.cy === h.cy);
       const own = isBuildable(h.cx, h.cy);
       const ok = own && !occupied && this.me.gold >= def.cost && this.me.lumber >= def.lumber && !this.wouldBlock(h.cx, h.cy);
-      w.hoverMesh.visible = h.cx >= 0 && h.cy >= 0 && h.cx < MAP_W && h.cy < MAP_H;
+      const inMap = h.cx >= 0 && h.cy >= 0 && h.cx < MAP_W && h.cy < MAP_H;
+      w.hoverMesh.visible = inMap;
+      if (inMap) w.showGhost(def, this.me.color, h.cx, h.cy, ok); else w.hideGhost();
       toWorld(h.cx + 0.5, h.cy + 0.5, 0.06, w.hoverMesh.position);
       (w.hoverMesh.material as any).color.setHex(ok ? 0x40ff40 : 0xff4040);
       const eff = effectiveStats(def.id, 0, this.me.research, { dmg: 0, speed: 0 });
@@ -778,6 +781,7 @@ export class GameView {
       return;
     }
     w.hoverMesh.visible = false;
+    w.hideGhost();
     if (!this.selected) { w.rangeRing.visible = false; w.auraRing.visible = false; }
   }
 

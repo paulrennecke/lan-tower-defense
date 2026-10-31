@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CELL_SIZE, GATE, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, cellIndex, isBuildable } from '../../../shared/map';
-import { createBase, createPortal, createRock, createTree, mergeWorldObjects } from './models';
+import type { TowerDef } from '../../../shared/data/classes';
+import { createBase, createPortal, createRock, createTree, createTowerModel, mergeWorldObjects, type TowerModel } from './models';
 
 export const PITCH = THREE.MathUtils.degToRad(56);
 
@@ -46,6 +47,7 @@ export class World {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private raycaster = new THREE.Raycaster();
   edgePan = true;
+  private ghost: { group: TowerModel; id: string } | null = null;
   /** Off while the keyboard build cursor uses the arrow keys. */
   arrowKeysMoveCamera = true;
 
@@ -100,6 +102,48 @@ export class World {
     ring.visible = false;
     this.scene.add(ring);
     return ring;
+  }
+
+  // ------------------------------------------------------------------ build ghost
+
+  /** Semi-transparent preview of the tower that is about to be placed. Rebuilt only when the tower type changes. */
+  showGhost(def: TowerDef, owner: number, cx: number, cy: number, ok: boolean) {
+    if (this.ghost?.id !== def.id) {
+      this.hideGhost(true);
+      const group = createTowerModel(def, 0, owner);
+      group.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const m = (o.material as THREE.MeshStandardMaterial).clone();
+        m.transparent = true;
+        m.opacity = Math.min(m.opacity, 0.55);
+        m.depthWrite = false;
+        o.material = m;
+        o.castShadow = false;
+        o.receiveShadow = false;
+      });
+      this.scene.add(group);
+      this.ghost = { group, id: def.id };
+    }
+    const g = this.ghost.group;
+    toWorld(cx + 0.5, cy + 0.5, 0, g.position);
+    g.visible = true;
+    // Green tint when the tower can be built here, red otherwise.
+    g.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        const m = o.material as THREE.MeshStandardMaterial;
+        m.emissive.set(ok ? 0x30ff30 : 0xff3030);
+        m.emissiveIntensity = 0.45;
+      }
+    });
+  }
+
+  hideGhost(dispose = false) {
+    if (!this.ghost) return;
+    this.ghost.group.visible = false;
+    if (!dispose) return;
+    this.scene.remove(this.ghost.group);
+    this.ghost.group.traverse((o) => { if (o instanceof THREE.Mesh) (o.material as THREE.Material).dispose(); });
+    this.ghost = null;
   }
 
   showRange(ring: THREE.Mesh, x: number, y: number, range: number) {
