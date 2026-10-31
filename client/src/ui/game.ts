@@ -101,7 +101,7 @@ export class GameView {
         <div class="game-menu panel hidden">
           <button class="h-pause">⏸ Pause <kbd>P</kbd></button>
           <button class="h-save">💾 Spiel speichern <kbd>Strg+S</kbd></button>
-          <button class="h-score">📊 Punktestand <kbd>Tab</kbd></button>
+          <button class="h-score">📊 Punktestand <kbd>B</kbd></button>
           <button class="h-route">🧭 Laufweg: an <kbd>R</kbd></button>
           <button class="h-zones">🔲 Bauraster: an <kbd>G</kbd></button>
           <button class="h-gift">💸 Gold senden <kbd>T</kbd></button>
@@ -594,7 +594,9 @@ export class GameView {
         this.select(t ? { kind: 'tower', id: t.info.id } : null);
       }
     });
-    window.addEventListener('keyup', (e) => { if (e.key === 'Tab' && this.active) { e.preventDefault(); this.toggleScore(false); } });
+    window.addEventListener('keyup', (e) => { if (e.key.toLowerCase() === 'b' && this.active) this.toggleScore(false); });
+    // Mouse clicks must not leave a button focused (Space/Enter would trigger it again); keyboard activation keeps focus.
+    this.el.addEventListener('click', (e) => { if (e.detail > 0 && (e.target as HTMLElement).closest('button')) (document.activeElement as HTMLElement | null)?.blur?.(); });
     window.addEventListener('keydown', (e) => {
       if (!this.active) return;
       const chatIn = this.q<HTMLInputElement>('.chat input');
@@ -608,6 +610,9 @@ export class GameView {
         return;
       }
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      // Tab moves the focus through the buttons; Space/Enter on a focused button activates it.
+      if (e.key === 'Tab') return;
+      if ((e.key === 'Enter' || e.key === ' ') && (e.target as HTMLElement)?.tagName === 'BUTTON') return;
       const key = e.key.toLowerCase();
       if ((e.ctrlKey || e.metaKey) && key === 's') { e.preventDefault(); this.saveGame(); return; }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -623,7 +628,7 @@ export class GameView {
       }
       if ((e.key === 'Enter' || e.key === ' ') && this.buildDef && this.hover) { e.preventDefault(); this.placeAtCursor(true); return; }
       if ((e.key === 'Enter' || e.key === ' ') && this.cursorMode && this.hover) { e.preventDefault(); this.selectAtCursor(); return; }
-      if (e.key === 'Tab') { e.preventDefault(); if (!e.repeat) this.toggleScore(true); return; }
+      if (e.key === 'b' || e.key === 'B') { e.preventDefault(); if (!e.repeat) this.toggleScore(true); return; }
       if (e.key === 'Enter') { e.preventDefault(); this.openChat(); return; }
       if (e.key === 'Escape') {
         this.el.querySelectorAll('.overlay:not(.o-over)').forEach((o) => o.classList.add('hidden'));

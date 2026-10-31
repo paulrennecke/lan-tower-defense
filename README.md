@@ -122,7 +122,8 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **Leertaste** | Kamera zu den Portalen und zum Tor |
 | **Alt + Klick** | Ping auf der Karte für alle |
 | **Enter** | Chat |
-| **Tab** (halten) | Punktestand |
+| **B** (halten) | Punktestand |
+| **Tab** / **Shift+Tab** | Durch die Buttons springen, **Enter** / **Leertaste** löst den fokussierten Button aus |
 | **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauraster an/aus**, **Gold senden**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
 | **P** | Spiel pausieren / fortsetzen (jeder Spieler) |
 | **Strg+S** | Spiel speichern (Menü → 💾) |
