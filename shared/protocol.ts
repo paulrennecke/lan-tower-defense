@@ -63,6 +63,7 @@ export type Fx =
 
 export interface FullState {
   you: string;
+  map: string;
   players: (LobbyPlayer & PlayerStats)[];
   sectionOwners: string[];
   towers: TowerInfo[];
@@ -92,6 +93,7 @@ export interface SaveInfo {
   wave: number;
   lives: number;
   players: { name: string; classId: string }[];
+  map?: string;
 }
 
 export type ClientMsg =
@@ -100,6 +102,7 @@ export type ClientMsg =
   | { t: 'setName'; name: string }
   | { t: 'lobbyReady'; ready: boolean }
   | { t: 'start' }
+  | { t: 'setMap'; id: string }
   | { t: 'chat'; text: string }
   | { t: 'build'; def: string; cx: number; cy: number }
   | { t: 'upgrade'; id: number }
@@ -116,7 +119,7 @@ export type ClientMsg =
 
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string }
-  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[] }
+  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string }
   | { t: 'game'; state: FullState }
   | Snapshot
   | { t: 'tower'; tower: TowerInfo }

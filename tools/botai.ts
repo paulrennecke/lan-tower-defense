@@ -1,31 +1,48 @@
 import { CLASS_BY_ID, towerDps, type TowerDef } from '../shared/data/classes';
-import { LANE_W, LANE_X, MAP_W, SECTION_OF, SPAWNS, cellIndex, lanesOf, traceRoute } from '../shared/map';
+import { MAP_DEF, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, cellIndex, computeFlow, lanesOf, nextCell, traceRoute } from '../shared/map';
 import type { Game } from '../server/game';
 
 /**
- * Serpentine maze plan for a build zone (13 x 10 cells): three walls, each leaving a one-cell gap on
- * alternating sides. Creeps have to zig-zag through the zone – the classic Wintermaul maze.
+ * Serpentine maze plan for a build zone: walls across the creep flow every third row/column, each leaving a
+ * one-cell gap on alternating sides – the classic Wintermaul maze.
  */
-const planCache = new Map<number, number[][]>();
+const planCache = new Map<string, number[][]>();
+let emptyFlow: { map: string; flow: Float32Array } | null = null;
 export function zonePlan(zone: number): number[][] {
-  let plan = planCache.get(zone);
-  if (!plan) {
-    const lane = zone % 4, band = Math.floor(zone / 4);
-    const x0 = LANE_X[lane], y0 = 3 + band * 10;
-    plan = [1, 4, 7].map((dy, w) => {
-      const gapLeft = (w + band) % 2 === 1;
-      const cells: number[] = [];
-      for (let k = 0; k < LANE_W - 1; k++) {
-        // Fill from the closed end towards the gap.
-        const x = gapLeft ? x0 + LANE_W - 1 - k : x0 + k;
-        cells.push(cellIndex(x, y0 + dy));
-      }
-      return cells;
-    });
-    planCache.set(zone, plan);
+  const key = MAP_ID + ':' + zone;
+  let plan = planCache.get(key);
+  if (plan) return plan;
+  if (emptyFlow?.map !== MAP_ID) emptyFlow = { map: MAP_ID, flow: computeFlow(new Uint8Array(MAP_W * MAP_H)) };
+  const empty = new Uint8Array(MAP_W * MAP_H);
+  const cells: number[] = [];
+  let x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1, fx = 0, fy = 0;
+  for (let i = 0; i < SECTION_OF.length; i++) {
+    if (SECTION_OF[i] !== zone) continue;
+    cells.push(i);
+    const x = i % MAP_W, y = Math.floor(i / MAP_W);
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+    const j = nextCell(emptyFlow.flow, empty, x, y);
+    if (j >= 0) { fx += (j % MAP_W) - x; fy += Math.floor(j / MAP_W) - y; }
   }
+  const inZone = new Set(cells);
+  const vertical = Math.abs(fy) >= Math.abs(fx);
+  plan = [];
+  const [a0, a1] = vertical ? [y0, y1] : [x0, x1];
+  for (let k = a0 + 1, w = 0; k <= a1 - 1; k += 3, w++) {
+    const line: number[] = [];
+    if (vertical) { for (let x = x0; x <= x1; x++) if (inZone.has(cellIndex(x, k))) line.push(cellIndex(x, k)); }
+    else { for (let y = y0; y <= y1; y++) if (inZone.has(cellIndex(k, y))) line.push(cellIndex(k, y)); }
+    if (line.length < 3) continue;
+    // Leave a gap at alternating ends and fill from the closed end towards the gap.
+    if ((w + zone) % 2) line.reverse();
+    plan.push(line.slice(0, -1));
+  }
+  planCache.set(key, plan);
   return plan;
 }
+
+/** Cells where building failed (creep in the way / would block) – skipped for the rest of the wave. */
+const failed = new WeakMap<Game, Map<number, number>>();
 
 const isSupport = (d: TowerDef) => !!(d.levels[0].aura || d.levels[0].income);
 const isBlock = (d: TowerDef) => d.shape === 'block';
@@ -42,17 +59,24 @@ export function botAct(game: Game, pid: string, rnd: () => number = Math.random)
   const cls = CLASS_BY_ID[p.classId];
   const towers = game.towersOf(pid);
   const zones = game.sectionOwners.map((o, s) => (o === pid ? s : -1)).filter((s) => s >= 0);
-  const plan = zones.flatMap((z) => zonePlan(z));
+  const priority: number[] = [];
+  for (const [x0, y0, x1, y1] of MAP_DEF.botWalls ?? []) {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (zones.includes(SECTION_OF[cellIndex(x, y)])) priority.push(cellIndex(x, y));
+  }
+  const plan = [...(priority.length ? [priority] : []), ...zones.flatMap((z) => zonePlan(z))];
 
   // 1) Keep the maze walls growing: cheap blocks on the first unfinished wall cells (about 3 per attack tower).
   const blockDef = cls.towers.find(isBlock);
   const blocks = towers.filter((t) => t.def === blockDef?.id).length;
   const attackers = towers.length - blocks;
   if (blockDef && p.gold >= blockDef.cost && blocks < 12 + attackers * 4) {
+    let fails = failed.get(game);
+    if (!fails) failed.set(game, (fails = new Map()));
     for (const wall of plan) {
-      const cell = wall.find((c) => !game.blocked[c]);
+      const cell = wall.find((c) => !game.blocked[c] && fails!.get(c) !== game.wave);
       if (cell === undefined) continue;
       if (!game.build(pid, blockDef.id, cell % MAP_W, Math.floor(cell / MAP_W))) break;
+      fails.set(cell, game.wave);
     }
   }
 

@@ -3,7 +3,7 @@ import { CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/cl
 import { ENEMY_BY_ID } from '../../../shared/data/enemies';
 import { VICTORY_WAVE, getWave } from '../../../shared/data/waves';
 import {
-  LANE_W, LANE_X, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, cellIndex, computeFlow, isBuildable, lanesOf, routeLength,
+  MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, ZONE_CENTER, cellIndex, setActiveMap, computeFlow, isBuildable, lanesOf, routeLength,
   spawnsConnected, traceRoute,
 } from '../../../shared/map';
 import {
@@ -144,6 +144,14 @@ export class GameView {
   // ------------------------------------------------------------------ lifecycle
 
   load(state: FullState, hostId: string | null) {
+    // Switch to the game's map before anything reads the map state.
+    this.ent.clear();
+    setActiveMap(state.map);
+    if (this.world.mapId !== state.map) this.world.loadMap();
+    this.blocked = new Uint8Array(MAP_W * MAP_H);
+    const mm = this.q<HTMLCanvasElement>('.minimap canvas');
+    mm.height = Math.round((230 * MAP_H) / MAP_W);
+    mm.style.height = mm.height + 'px';
     this.you = state.you;
     this.hostId = hostId;
     this.players = new Map(state.players.map((p) => [p.id, p]));
@@ -578,7 +586,7 @@ export class GameView {
     this.sectionOwners.forEach((o, i) => { if (o === this.you) mine.push(i); });
     const sections = mine.length ? mine : [0];
     const s = sections[this.sectionCycle++ % sections.length];
-    this.world.focus(LANE_X[s % 4] + LANE_W / 2, 3 + Math.floor(s / 4) * 10 + 5);
+    this.world.focus(ZONE_CENTER[s].x, ZONE_CENTER[s].y);
   }
 
   /** Recomputes the creep routes from the current towers (shown as dashed lines, like the Wintermaul maze preview). */
@@ -730,13 +738,13 @@ export class GameView {
       for (let y = 0; y < MAP_H; y++) {
         for (let x = 0; x < MAP_W; x++) {
           const i = cellIndex(x, y);
-          b.fillStyle = WALKABLE[i] ? '#dfe7ef' : '#6f86a0';
+          b.fillStyle = WATER[i] ? '#3f78a8' : WALKABLE[i] ? (SECTION_OF[i] < 0 ? '#c4dcec' : '#e8eef5') : '#3a4552';
           b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
           if (!WALKABLE[i]) continue;
           const s = SECTION_OF[i];
           if (s >= 0 && this.sectionOwners.length) {
             const col = this.players.get(this.sectionOwners[s])?.color ?? 0xffffff;
-            b.fillStyle = hex(col) + (this.sectionOwners[s] === this.you ? '66' : '26');
+            b.fillStyle = hex(col) + (this.sectionOwners[s] === this.you ? '30' : '14');
             b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
           }
         }

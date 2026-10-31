@@ -21,6 +21,7 @@ const lobby = new LobbyUI(app, {
   chat: (text) => net.send({ t: 'chat', text }),
   load: (id) => net.send({ t: 'load', id }),
   deleteSave: (id) => net.send({ t: 'deleteSave', id }),
+  setMap: (id) => net.send({ t: 'setMap', id }),
 }, name);
 
 const game = new GameView(app, net);

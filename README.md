@@ -39,12 +39,17 @@ netsh advfirewall firewall add rule name="LAN Tower Defense" dir=in action=allow
 
 ## Spielablauf
 
-1. **Lobby:** Namen eingeben, eine von 6 Klassen wählen, „Bereit“ klicken. Der Host (👑) startet das Spiel.
-2. **Die Karte (Wintermaul-Stil):** Vier Portale im Norden öffnen je eine verschneite **Spur** zwischen Eisklippen.
-   Jede Spur hat 4 Bauzonen (insgesamt **16 Zonen**), unten laufen alle Spuren in einem Trichter zum **Tor** zusammen.
-   - 1 Spieler verteidigt eine Spur, 2–4 Spieler bekommen je eine eigene Spur, ab 5 Spielern teilen sich Spieler
-     eine Spur zonenweise. Nur Spuren mit Verteidigern bekommen Gegner.
-   - Jede aktive Spur erhält die **komplette Welle**; die Lebenspunkte skalieren mit der Spielerzahl pro Spur.
+1. **Lobby:** Namen eingeben, eine von 6 Klassen wählen, „Bereit“ klicken. Der Host (👑) wählt die **Karte** und startet das Spiel.
+2. **Karten** (Northrend-Look: verschneite Plateaus mit Felskanten, Eispfade, zugefrorenes Wasser):
+   - **Wintermaul X9** – die klassische Karte: drei Portale im Norden, darunter ein breites Mittelfeld mit
+     Eiskanälen, der große Felsgraben (∩) zwingt die Gegner links oder rechts herum, das Tor liegt im See im Süden.
+   - **Nordend (4 Spuren)** – vier getrennte Spuren zwischen Eisklippen, unten ein gemeinsamer Trichter zum Tor.
+   - **Zwillingsgletscher** – zwei Spuren biegen nach innen ab und vereinen sich zu einer Schlucht nach Süden.
+
+   Jede Karte hat **16 Bauzonen**. Je nach Spielerzahl sind 1–4 Portale aktiv (z. B. X9: 1 Spieler = Mitte,
+   2 Spieler = links/rechts, ab 3 alle drei). Jedes aktive Portal schickt die **komplette Welle**; die Lebenspunkte
+   skalieren mit der Spielerzahl pro Spur. Zonen inaktiver Spuren bleiben leer, gemeinsame Zonen (z. B. der untere
+   Teil von X9) werden immer verteilt.
 3. **Mazing:** Es gibt keinen festen Pfad. Bodengegner laufen immer den kürzesten Weg um die Türme herum. Mit billigen
    **Mauerblöcken** (5 Gold, Taste 1) baut man Wände mit Lücken, sodass die Gegner Schlangenlinien laufen müssen.
    - Die **rote gestrichelte Linie** zeigt den aktuellen Weg, im Baumenü steht die **Weglänge** je Spur.
@@ -122,7 +127,7 @@ Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich d
   Gegner und Countdown still; Bauen, Aufwerten, Verkaufen und Forschung sind gesperrt.
 - **Speichern:** Mit 💾 jederzeit während des Spiels. Die Spielstände liegen auf dem Server-Rechner im Ordner
   `saves/` (gleicher Name überschreibt den alten Spielstand).
-- **Laden:** Der Host 👑 lädt einen Spielstand in der Lobby (Liste „💾 Spielstände“). Spieler übernehmen den
+- **Laden:** Der Host 👑 lädt einen Spielstand (inkl. Karte) in der Lobby (Liste „💾 Spielstände“). Spieler übernehmen den
   Platz mit **gleichem Namen**, die übrigen Plätze werden der Reihe nach vergeben. Klassen kommen aus dem Spielstand.
   Unbesetzte Plätze übernehmen später beitretende Spieler automatisch. Ein geladenes Spiel startet pausiert.
 
@@ -135,7 +140,7 @@ Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich d
 ## Technik
 
 ```
-shared/   Spieldaten & Regeln (Klassen, Türme, Gegner, Wellen, Karte, Schadenstabelle, Protokoll)
+shared/   Spieldaten & Regeln (Klassen, Türme, Gegner, Wellen, Karten (maps.ts), Pfadsuche, Schadenstabelle, Protokoll)
 server/   Node.js-Server: HTTP für den Client + WebSocket, Lobby, autoritative Simulation (20 Ticks/s)
 client/   Browser-Client: Vite + Three.js, prozedurale Low-Poly-Modelle, HUD
 tools/    Bots, Balancing-Simulation, Browser-Tests

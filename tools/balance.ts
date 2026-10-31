@@ -1,9 +1,11 @@
 import { CLASSES } from '../shared/data/classes';
 import { Game } from '../server/game';
 import { botAct } from './botai';
+import { setActiveMap } from '../shared/map';
 
-/** Headless balance simulation: `npx tsx tools/balance.ts [players] [maxWave]` */
-export function simulate(players: number, maxWave = 45, classes?: string[]) {
+/** Headless balance simulation: `MAP=x9 npx tsx tools/balance.ts [players] [maxWave] [class]` */
+export function simulate(players: number, maxWave = 45, classes?: string[], map = process.env.MAP ?? 'x9') {
+  setActiveMap(map);
   const list = Array.from({ length: players }, (_, i) => ({
     id: 'p' + i, name: 'Bot' + i, color: 0xffffff, classId: classes?.[i % classes.length] ?? CLASSES[i % CLASSES.length].id,
   }));

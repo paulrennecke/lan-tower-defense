@@ -1,6 +1,25 @@
 import { CLASSES, CLASS_BY_ID } from '../../../shared/data/classes';
 import { MAX_PLAYERS, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
 import { CLASS_ICONS, TOWER_ICONS, damageTableHtml, esc, hex } from './format';
+import { MAPS, type MapDef } from '../../../shared/maps';
+
+/** Small top-down preview of a map (like the WC3 minimap). */
+export function drawMapPreview(cv: HTMLCanvasElement, def: MapDef) {
+  const ctx = cv.getContext('2d')!;
+  const s = Math.min(cv.width / def.w, cv.height / def.h);
+  ctx.fillStyle = '#1b2430';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const ox = (cv.width - def.w * s) / 2, oy = (cv.height - def.h * s) / 2;
+  for (let y = 0; y < def.h; y++) {
+    for (let x = 0; x < def.w; x++) {
+      const ch = def.grid[y][x];
+      ctx.fillStyle = ch === '#' ? '#2b3644' : ch === '~' ? '#3f78a8' : ch === '.' ? '#cfe3f1' : ch === 'E' ? '#ffffff' : '#5f9fae';
+      ctx.fillRect(ox + x * s, oy + y * s, s + 0.4, s + 0.4);
+    }
+  }
+  ctx.fillStyle = '#c040ff';
+  for (const sp of def.spawns) { ctx.beginPath(); ctx.arc(ox + sp.x * s, oy + (sp.y + 0.5) * s, 3, 0, Math.PI * 2); ctx.fill(); }
+}
 
 export interface LobbyActions {
   setName(name: string): void;
@@ -10,6 +29,7 @@ export interface LobbyActions {
   chat(text: string): void;
   load(id: string): void;
   deleteSave(id: string): void;
+  setMap(id: string): void;
 }
 
 type LobbyMsg = Extract<ServerMsg, { t: 'lobby' }>;
@@ -28,6 +48,16 @@ export class LobbyUI {
       <div class="lobby-grid">
         <div>
           <div class="panel">
+            <h2 style="margin-top:0">🗺 Karte <small class="muted map-hint"></small></h2>
+            <div class="map-cards">${MAPS.map((m) => `
+              <div class="map-card" data-map="${m.id}" title="${esc(m.desc)}">
+                <canvas width="150" height="150"></canvas>
+                <b>${esc(m.name)}</b>
+                <div class="muted" style="font-size:12px">${esc(m.desc)}</div>
+              </div>`).join('')}
+            </div>
+          </div>
+          <div class="panel" style="margin-top:16px">
             <h2 style="margin-top:0">Wähle deine Klasse</h2>
             <div class="class-cards">${CLASSES.map((c) => `
               <div class="class-card" data-class="${c.id}" style="border-left: 5px solid ${hex(c.color)}">
@@ -105,7 +135,13 @@ export class LobbyUI {
       if (e.key === 'Enter' && chatIn.value.trim()) { actions.chat(chatIn.value.trim()); chatIn.value = ''; }
     };
     this.showClass(CLASSES[0].id, false);
+    this.el.querySelectorAll<HTMLElement>('.map-card').forEach((card) => {
+      drawMapPreview(card.querySelector('canvas')!, MAPS.find((m) => m.id === card.dataset.map)!);
+      card.onclick = () => { if (this.isHost) actions.setMap(card.dataset.map!); };
+    });
   }
+
+  private isHost = false;
 
   private q<T extends HTMLElement = HTMLElement>(sel: string): T { return this.el.querySelector(sel) as T; }
 
@@ -133,6 +169,12 @@ export class LobbyUI {
         <span class="rdy">${p.spectator ? '' : p.ready || p.id === msg.hostId ? '<span class="good">✔ bereit</span>' : '<span class="muted">wartet</span>'}</span>
       </li>`).join('');
     const isHost = msg.hostId === you;
+    this.isHost = isHost;
+    this.el.querySelectorAll<HTMLElement>('.map-card').forEach((card) => {
+      card.classList.toggle('selected', card.dataset.map === msg.map);
+      card.classList.toggle('clickable', isHost);
+    });
+    this.q('.map-hint').textContent = isHost ? '– wähle die Karte' : '– der Host wählt die Karte';
     const readyBtn = this.q<HTMLButtonElement>('.ready');
     readyBtn.classList.toggle('hidden', isHost || !!this.me?.spectator);
     readyBtn.textContent = this.me?.ready ? 'Nicht bereit' : 'Bereit';
@@ -161,7 +203,7 @@ export class LobbyUI {
         <div style="flex:1">
           <b>${esc(s.name)}</b><br>
           <span class="muted" style="font-size:12px">Welle ${s.wave} · ❤ ${s.lives} · ${new Date(s.date).toLocaleString()}<br>
-          ${s.players.map((p) => `${CLASS_ICONS[p.classId] ?? ''} ${esc(p.name)}`).join(', ')}</span>
+          ${s.players.map((p) => `${CLASS_ICONS[p.classId] ?? ''} ${esc(p.name)}`).join(', ')}${s.map ? ` · 🗺 ${esc(MAPS.find((m) => m.id === s.map)?.name ?? s.map)}` : ''}</span>
         </div>
         ${isHost ? '<button class="load primary">Laden</button><button class="del" title="Löschen">🗑</button>' : ''}
       </li>`).join('') + (isHost ? '' : '<li class="muted" style="font-size:12px">Nur der Host 👑 kann Spielstände laden.</li>');

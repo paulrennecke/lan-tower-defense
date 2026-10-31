@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { CELL_SIZE, GATE, LANES, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, cellIndex, isBuildable, lanesOf } from '../../../shared/map';
-import { createBase, createIceCliff, createPortal, createRock, createTree, mergeWorldObjects } from './models';
+import { CELL_SIZE, GATE, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, cellIndex, isBuildable } from '../../../shared/map';
+import { createBase, createPortal, createRock, createTree, mergeWorldObjects } from './models';
 
 export const PITCH = THREE.MathUtils.degToRad(56);
 
@@ -33,7 +33,9 @@ export class World {
   private dragging: { x: number; y: number } | null = null;
   private mouse = { x: 0, y: 0, inside: false };
   private mapCanvas = document.createElement('canvas');
-  private mapTexture: THREE.CanvasTexture;
+  private mapTexture!: THREE.CanvasTexture;
+  private staticGroup: THREE.Group | null = null;
+  mapId = '';
   private animated: THREE.Object3D[] = [];
   private routeLines: THREE.Line[] = [];
   private snow!: THREE.Points;
@@ -70,13 +72,7 @@ export class World {
     sun.shadow.normalBias = 0.03;
     this.scene.add(sun);
 
-    this.mapCanvas.width = MAP_W * 24;
-    this.mapCanvas.height = MAP_H * 24;
-    this.mapTexture = new THREE.CanvasTexture(this.mapCanvas);
-    this.mapTexture.colorSpace = THREE.SRGBColorSpace;
-    this.mapTexture.anisotropy = 8;
-    this.paintMap([], new Map(), '');
-    this.buildStatic();
+    this.loadMap();
 
     const highlight = (color: number, opacity: number) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
     this.hoverMesh = new THREE.Mesh(new THREE.BoxGeometry(CELL_SIZE * 0.95, 0.1, CELL_SIZE * 0.95), highlight(0x40ff40, 0.45));
@@ -112,90 +108,165 @@ export class World {
 
   // ------------------------------------------------------------------ static world
 
-  private buildStatic() {
+  /** (Re)builds the static terrain for the active map. */
+  loadMap() {
+    if (this.staticGroup) {
+      this.scene.remove(this.staticGroup);
+      this.animated = this.animated.filter((o) => !o.userData.staticWorld);
+    }
+    this.staticGroup = new THREE.Group();
+    this.scene.add(this.staticGroup);
+    this.mapCanvas = document.createElement('canvas');
+    this.mapCanvas.width = MAP_W * 24;
+    this.mapCanvas.height = MAP_H * 24;
+    this.mapTexture?.dispose();
+    this.mapTexture = new THREE.CanvasTexture(this.mapCanvas);
+    this.mapTexture.colorSpace = THREE.SRGBColorSpace;
+    this.mapTexture.anisotropy = 8;
+    this.paintMap([], new Map(), '');
+    this.buildStatic(this.staticGroup);
+    this.mapId = MAP_ID;
+  }
+
+  /** Northrend-style canyon: rock cliffs with snow caps, icy paths, frozen water and a forested plateau. */
+  private buildStatic(root: THREE.Group) {
     const rand = mulberry(1337);
-    const mapGeo = new THREE.PlaneGeometry(MAP_W * CELL_SIZE, MAP_H * CELL_SIZE);
-    const mapMesh = new THREE.Mesh(mapGeo, new THREE.MeshStandardMaterial({ map: this.mapTexture, roughness: 0.95 }));
+    const W = MAP_W * CELL_SIZE, H = MAP_H * CELL_SIZE;
+    const CLIFF = 2.6;
+    const mapMesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: this.mapTexture, roughness: 0.9 }));
     mapMesh.rotation.x = -Math.PI / 2;
     mapMesh.receiveShadow = true;
-    this.scene.add(mapMesh);
+    root.add(mapMesh);
 
-    // Outer terrain.
-    const outerCanvas = document.createElement('canvas');
-    outerCanvas.width = outerCanvas.height = 256;
-    const octx = outerCanvas.getContext('2d')!;
-    octx.fillStyle = '#dfe8f1';
-    octx.fillRect(0, 0, 256, 256);
+    const snowCanvas = document.createElement('canvas');
+    snowCanvas.width = snowCanvas.height = 256;
+    const sctx = snowCanvas.getContext('2d')!;
+    sctx.fillStyle = '#e6eef6';
+    sctx.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 3000; i++) {
-      const v = 200 + rand() * 50;
-      octx.fillStyle = `rgba(${v - 15},${v - 5},${v + 5},0.5)`;
-      octx.fillRect(rand() * 256, rand() * 256, 2, 2);
+      const v = 200 + rand() * 55;
+      sctx.fillStyle = `rgba(${v - 18},${v - 6},${v + 4},0.5)`;
+      sctx.fillRect(rand() * 256, rand() * 256, 2, 2);
     }
-    const outerTex = new THREE.CanvasTexture(outerCanvas);
-    outerTex.wrapS = outerTex.wrapT = THREE.RepeatWrapping;
-    outerTex.repeat.set(30, 30);
-    outerTex.colorSpace = THREE.SRGBColorSpace;
-    const outer = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ map: outerTex, roughness: 1 }));
-    outer.rotation.x = -Math.PI / 2;
-    outer.position.y = -0.05;
-    outer.receiveShadow = true;
-    this.scene.add(outer);
+    const snowTex = new THREE.CanvasTexture(snowCanvas);
+    snowTex.wrapS = snowTex.wrapT = THREE.RepeatWrapping;
+    snowTex.repeat.set(12, 12);
+    snowTex.colorSpace = THREE.SRGBColorSpace;
+    const snowMat = new THREE.MeshStandardMaterial({ map: snowTex, roughness: 0.95 });
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x4d5866, roughness: 0.9, flatShading: true });
+    const rockMat2 = new THREE.MeshStandardMaterial({ color: 0x3c4552, roughness: 0.95, flatShading: true });
+    const capMat = new THREE.MeshStandardMaterial({ color: 0xf2f7fc, roughness: 0.8, flatShading: true });
 
-    // Cliff border around the play field.
-    const borderMat = new THREE.MeshStandardMaterial({ color: 0xa9c2d8, roughness: 0.6, flatShading: true });
-    const W = MAP_W * CELL_SIZE, H = MAP_H * CELL_SIZE;
-    for (const [w, d, x, z] of [[W + 2, 1, 0, -H / 2 - 0.5], [W + 2, 1, 0, H / 2 + 0.5], [1, H, -W / 2 - 0.5, 0], [1, H, W / 2 + 0.5, 0]] as const) {
-      const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.6, d), borderMat);
-      b.position.set(x, 0.3, z);
-      b.castShadow = b.receiveShadow = true;
-      this.scene.add(b);
+    // Plateau around the canyon (top at cliff height, like the raised Northrend terrain around WC3 TD maps).
+    const P = 160;
+    const frameMats = [rockMat, rockMat, snowMat, rockMat, rockMat, rockMat];
+    for (const [w, d, x, z] of [
+      [P, H + 2 * P, -W / 2 - P / 2, 0], [P, H + 2 * P, W / 2 + P / 2, 0], [W, P, 0, -H / 2 - P / 2], [W, P, 0, H / 2 + P / 2],
+    ] as const) {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(w, CLIFF, d), frameMats);
+      box.position.set(x, CLIFF / 2 - 0.01, z);
+      box.receiveShadow = true;
+      root.add(box);
     }
 
-    // Forest around the map (merged into a few meshes for performance).
-    const deco: THREE.Object3D[] = [];
-    for (let i = 0; i < 420; i++) {
-      const ang = rand() * Math.PI * 2;
-      let x = (rand() - 0.5) * (W + 70), z = (rand() - 0.5) * (H + 70);
-      if (Math.abs(x) < W / 2 + 2 && Math.abs(z) < H / 2 + 2) {
-        if (rand() < 0.5) x = Math.sign(x || 1) * (W / 2 + 3 + rand() * 30); else z = Math.sign(z || 1) * (H / 2 + 3 + rand() * 30);
+    // Cliff cells: rock blocks with snow caps, boulders where they face the path.
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    const dod = new THREE.DodecahedronGeometry(1, 0);
+    const cliffs: THREE.Object3D[] = [];
+    const walk = (x: number, y: number) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H && WALKABLE[cellIndex(x, y)] === 1;
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        const i = cellIndex(x, y);
+        if (WALKABLE[i] || WATER[i]) continue;
+        const h = CLIFF + (rand() - 0.5) * 0.12;
+        const p = toWorld(x + 0.5, y + 0.5, 0);
+        const rock = new THREE.Mesh(box, rand() < 0.5 ? rockMat : rockMat2);
+        rock.scale.set(CELL_SIZE, h, CELL_SIZE);
+        rock.position.set(p.x, h / 2, p.z);
+        const cap = new THREE.Mesh(box, capMat);
+        // Continuous snow cover on top, pulled back on the sides facing the path so the rock rim shows.
+        const inset = 0.28;
+        const l = walk(x - 1, y) ? inset : 0, r = walk(x + 1, y) ? inset : 0, t = walk(x, y - 1) ? inset : 0, b = walk(x, y + 1) ? inset : 0;
+        cap.scale.set(CELL_SIZE + 0.002 - l - r, 0.2, CELL_SIZE + 0.002 - t - b);
+        cap.position.set(p.x + (l - r) / 2, CLIFF + 0.06, p.z + (t - b) / 2);
+        cliffs.push(rock, cap);
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          if (!walk(x + dx, y + dy) || rand() < 0.35) continue;
+          const b = new THREE.Mesh(dod, rand() < 0.5 ? rockMat : rockMat2);
+          const r = 0.5 + rand() * 0.45;
+          b.scale.set(r, r * (1.2 + rand()), r);
+          b.rotation.set(rand() * 3, rand() * 3, rand() * 3);
+          b.position.set(p.x + dx * (CELL_SIZE * 0.5 - 0.15) + (rand() - 0.5) * 0.8, r * 0.6, p.z + dy * (CELL_SIZE * 0.5 - 0.15) + (rand() - 0.5) * 0.8);
+          cliffs.push(b);
+        }
+        // Snowy pines on big cliff plateaus.
+        const inner = !walk(x + 1, y) && !walk(x - 1, y) && !walk(x, y + 1) && !walk(x, y - 1) && !WATER[i];
+        if (inner && rand() < 0.22) {
+          const t = createTree(rand);
+          t.position.set(p.x, h, p.z);
+          cliffs.push(t);
+        }
       }
-      const obj = rand() < 0.85 ? createTree(rand) : createRock(rand);
-      obj.position.set(x, 0, z);
-      obj.rotation.y = ang;
+    }
+    root.add(mergeWorldObjects(cliffs));
+
+    // Frozen water with ice floes.
+    const waterMat = new THREE.MeshStandardMaterial({ color: 0x3f7fb0, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 });
+    const iceMat = new THREE.MeshStandardMaterial({ color: 0xe8f4ff, roughness: 0.4, flatShading: true });
+    const water: THREE.Object3D[] = [];
+    const plane = new THREE.PlaneGeometry(CELL_SIZE, CELL_SIZE);
+    for (let i = 0; i < WATER.length; i++) {
+      if (!WATER[i]) continue;
+      const x = i % MAP_W, y = Math.floor(i / MAP_W);
+      const w = new THREE.Mesh(plane, waterMat);
+      w.rotation.x = -Math.PI / 2;
+      toWorld(x + 0.5, y + 0.5, 0.12, w.position);
+      water.push(w);
+      if (rand() < 0.12) {
+        const floe = new THREE.Mesh(dod, iceMat);
+        const r = 0.3 + rand() * 0.5;
+        floe.scale.set(r, 0.12, r * (0.6 + rand() * 0.6));
+        floe.rotation.y = rand() * 3;
+        toWorld(x + rand(), y + rand(), 0.16, floe.position);
+        water.push(floe);
+      }
+    }
+    if (water.length) root.add(mergeWorldObjects(water));
+
+    // Forest on the plateau.
+    const deco: THREE.Object3D[] = [];
+    for (let i = 0; i < 520; i++) {
+      let x = (rand() - 0.5) * (W + 90), z = (rand() - 0.5) * (H + 90);
+      if (Math.abs(x) < W / 2 + 2 && Math.abs(z) < H / 2 + 2) {
+        if (rand() < 0.5) x = Math.sign(x || 1) * (W / 2 + 3 + rand() * 40); else z = Math.sign(z || 1) * (H / 2 + 3 + rand() * 40);
+      }
+      const obj = rand() < 0.88 ? createTree(rand) : createRock(rand);
+      obj.position.set(x, CLIFF, z);
+      obj.rotation.y = rand() * Math.PI * 2;
       obj.scale.multiplyScalar(1.6);
       deco.push(obj);
     }
-    this.scene.add(mergeWorldObjects(deco));
+    root.add(mergeWorldObjects(deco));
 
-    // Ice cliffs on every blocked cell inside the map.
-    const cliffs: THREE.Object3D[] = [];
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        if (WALKABLE[cellIndex(x, y)]) continue;
-        const c = createIceCliff(rand);
-        toWorld(x + 0.5, y + 0.5, 0, c.position);
-        cliffs.push(c);
-      }
-    }
-    this.scene.add(mergeWorldObjects(cliffs));
-
-    // One spawn portal per lane at the top.
+    // One spawn portal per lane.
     for (const sp of SPAWNS) {
       const portal = createPortal();
       toWorld(sp.x, sp.y - 0.6, 0, portal.position);
       portal.rotation.y = Math.PI / 2;
-      this.scene.add(portal);
+      portal.userData.staticWorld = true;
+      root.add(portal);
       this.animated.push(portal);
       const light = new THREE.PointLight(0x7fd0ff, 25, 14);
       light.position.copy(portal.position).add(new THREE.Vector3(0, 2, 0));
-      this.scene.add(light);
+      root.add(light);
     }
 
     // The gate the creeps try to reach.
     const base = createBase();
-    toWorld(GATE.x, GATE.y + 1.2, 0, base.position);
+    toWorld(GATE.x, GATE.y, 0, base.position);
+    base.rotation.y = GATE.rot;
     base.scale.setScalar(1.4);
-    this.scene.add(base);
+    root.add(base);
 
     // Snowfall.
     const flakes = 2500;
@@ -208,7 +279,7 @@ export class World {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.snow = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.35, transparent: true, opacity: 0.85, depthWrite: false }));
-    this.scene.add(this.snow);
+    root.add(this.snow);
   }
 
   private updateSnow(dt: number, t: number) {
@@ -241,29 +312,52 @@ export class World {
     const ctx = this.mapCanvas.getContext('2d')!;
     const S = 24;
     const rand = mulberry(42);
-    const active = sectionOwners.length ? lanesOf(sectionOwners) : [0, 1, 2, 3];
-    ctx.fillStyle = '#e4ecf4';
+    // Snow for build zones, slick blue ice for the open paths (Northrend tiles).
+    ctx.fillStyle = '#dbe6ef';
     ctx.fillRect(0, 0, this.mapCanvas.width, this.mapCanvas.height);
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        const i = cellIndex(x, y);
+        if (WATER[i]) ctx.fillStyle = '#25537a';
+        else if (!WALKABLE[i]) ctx.fillStyle = '#3a4552';
+        else if (SECTION_OF[i] < 0) ctx.fillStyle = '#b9d6ea';
+        else continue;
+        ctx.fillRect(x * S, y * S, S, S);
+      }
+    }
     for (let i = 0; i < 20000; i++) {
       const v = 205 + rand() * 45;
-      ctx.fillStyle = `rgba(${v - 20},${v - 8},${v + 5},0.5)`;
+      ctx.fillStyle = `rgba(${v - 20},${v - 8},${v + 5},0.45)`;
       ctx.fillRect(rand() * this.mapCanvas.width, rand() * this.mapCanvas.height, 2 + rand() * 3, 2 + rand() * 2);
+    }
+    // Cracks in the ice paths.
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        const i = cellIndex(x, y);
+        if (!WALKABLE[i] || SECTION_OF[i] >= 0 || rand() < 0.5) continue;
+        ctx.beginPath();
+        let px = x * S + rand() * S, py = y * S + rand() * S;
+        ctx.moveTo(px, py);
+        for (let k = 0; k < 3; k++) { px += (rand() - 0.5) * 14; py += (rand() - 0.5) * 14; ctx.lineTo(px, py); }
+        ctx.stroke();
+      }
     }
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         const i = cellIndex(x, y);
-        if (!WALKABLE[i]) { ctx.fillStyle = 'rgba(120,150,180,0.55)'; ctx.fillRect(x * S, y * S, S, S); continue; }
         const s = SECTION_OF[i];
-        if (s < 0) { ctx.fillStyle = 'rgba(150,165,185,0.28)'; ctx.fillRect(x * S, y * S, S, S); continue; }
+        if (s < 0) continue;
         const owner = sectionOwners[s];
-        if (!active.includes(s % LANES) || (sectionOwners.length && !owner)) {
+        if (sectionOwners.length && !owner) {
           ctx.fillStyle = 'rgba(90,110,135,0.3)';
           ctx.fillRect(x * S, y * S, S, S);
           continue;
         }
         if (!owner) continue;
         const col = colors.get(owner) ?? 0xffffff;
-        ctx.fillStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.2 : 0.08})`;
+        ctx.fillStyle = `rgba(${(col >> 16) & 255},${(col >> 8) & 255},${col & 255},${owner === you ? 0.07 : 0.03})`;
         ctx.fillRect(x * S, y * S, S, S);
       }
     }

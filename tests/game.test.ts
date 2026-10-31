@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { Game, SELL_REFUND } from '../server/game';
 import { TOWER_BY_ID } from '../shared/data/classes';
 import { FIRST_COUNTDOWN, START_GOLD, START_LIVES, VICTORY_WAVE } from '../shared/data/waves';
-import { MAP_H, MAP_W, SECTION_OF, SPAWNS, cellIndex, traceRoute } from '../shared/map';
+import { MAP_H, MAP_W, SECTION_OF, SPAWNS, cellIndex, setActiveMap, traceRoute } from '../shared/map';
+
+// These tests use the coordinates of the four-lane Nordend map.
+setActiveMap('nordend');
 import { simulate } from '../tools/balance';
 
 const mkGame = (classes: string[], hooks = {}) =>

@@ -85,6 +85,14 @@ const G = {
   dod: new THREE.DodecahedronGeometry(1, 0),
   torus: new THREE.TorusGeometry(1, 0.12, 6, 20),
   plane: new THREE.PlaneGeometry(1, 1),
+  /** Bat/dragon wing membrane (in the XZ plane, pointing +X). */
+  wing: (() => {
+    const g = new THREE.BufferGeometry();
+    const v = [0, 0, 0, 1, 0, 0.25, 0.92, 0, -0.45, 0, 0, 0, 0.92, 0, -0.45, 0.55, 0, -0.62, 0, 0, 0, 0.55, 0, -0.62, 0.12, 0, -0.42];
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.computeVertexNormals();
+    return g;
+  })(),
 };
 export type GeoKey = keyof typeof G;
 
@@ -131,9 +139,16 @@ export function createTowerModel(def: TowerDef, level: number, owner: number): T
   let muzzleY = 2;
   let turret: THREE.Object3D | undefined;
 
-  // Foundation with team colour trim (like WC3 team colours).
-  g.add(P('box', mat(DSTONE), [1.75, 0.25, 1.75], [0, 0.125, 0]));
-  g.add(P('box', team, [1.9, 0.12, 1.9], [0, 0.16, 0]));
+  // WC3-style foundation: stepped stone plinth, corner stones, team-coloured trim and banner.
+  if (def.shape === 'block') {
+    g.add(P('box', team, [1.6, 0.06, 1.6], [0, 0.03, 0]));
+  } else {
+    g.add(P('box', team, [1.95, 0.08, 1.95], [0, 0.04, 0]));
+    g.add(P('box', mat(DSTONE), [1.8, 0.2, 1.8], [0, 0.14, 0]));
+    g.add(P('box', mat(STONE), [1.5, 0.14, 1.5], [0, 0.3, 0]));
+    for (const [x, z] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) g.add(P('box', mat(DSTONE), [0.32, 0.42, 0.32], [x, 0.21, z]));
+    g.add(P('cyl', mat(DWOOD), [0.035, 1.3, 0.035], [0.8, 0.95, 0.8]), P('box', team, [0.03, 0.34, 0.42], [0.8, 1.42, 0.58]));
+  }
 
   const add = (...m: THREE.Object3D[]) => m.forEach((x) => g.add(x));
 
@@ -391,10 +406,10 @@ export function createTowerModel(def: TowerDef, level: number, owner: number): T
       muzzleY = 2; break;
     }
     case 'block': {
-      // Maze wall: chunky blocks in the class colour with a snow cap.
-      add(P('box', mat(c), [1.7, 0.9, 1.7], [0, 0.65, 0]),
-        P('box', mat(c), [1.3, 0.5, 1.3], [0.1, 1.3, -0.05], [0, 0.3, 0]),
-        P('box', mat(0xf4f8ff), [1.35, 0.12, 1.35], [0.1, 1.6, -0.05], [0, 0.3, 0]));
+      // Maze rock (like the cheap rocks/walls used for mazing in Wintermaul) with a snow cap.
+      add(P('dod', mat(c, { rough: 0.95 }), [0.95, 0.7, 0.9], [0, 0.55, 0], [0.3, 0.5, 0.1]),
+        P('dod', mat(c, { rough: 0.95 }), [0.55, 0.45, 0.6], [0.35, 1.05, -0.2], [0.8, 0.2, 0.4]),
+        P('dod', mat(0xf4f8ff), [0.6, 0.18, 0.55], [0.1, 1.15, 0.05], [0, 0.7, 0]));
       muzzleY = 1.2; break;
     }
     case 'zeppelin': {
@@ -444,22 +459,53 @@ export function createEnemyModel(def: EnemyDef, ghost = false): EnemyModel {
 
   switch (def.shape) {
     case 'biped': case 'demon': {
+      // WC3-like creep: hunched torso, big shoulders, swinging arms with a weapon.
       const big = def.shape === 'demon';
-      add(P('sph', c1, [0.32, 0.42, 0.25], [0, 0.85, 0]), P('sph', c2, [0.2, 0.2, 0.2], [0, 1.38, 0.03]),
-        P('sph', eye, [0.04, 0.04, 0.04], [-0.07, 1.42, 0.18], [0, 0, 0], false), P('sph', eye, [0.04, 0.04, 0.04], [0.07, 1.42, 0.18], [0, 0, 0], false));
-      for (const x of [-0.38, 0.38]) add(P('box', c1, [0.12, 0.5, 0.12], [x, 0.9, 0], [0, 0, x > 0 ? 0.3 : -0.3]));
-      for (const x of [-0.13, 0.13]) { const l = P('box', c2, [0.13, 0.5, 0.13], [x, 0.3, 0]); add(l); legs.push(l); }
+      const dark = mat(0x2a2420, gh);
+      add(P('box', c2, [0.36, 0.18, 0.24], [0, 0.62, 0]),
+        P('sph', c1, [0.34, 0.36, 0.26], [0, 0.98, 0.04], [0.25, 0, 0]),
+        P('sph', c2, [0.16, 0.12, 0.16], [-0.33, 1.2, 0.02]), P('sph', c2, [0.16, 0.12, 0.16], [0.33, 1.2, 0.02]),
+        P('sph', c1, [0.17, 0.18, 0.18], [0, 1.4, 0.16]), P('box', c2, [0.18, 0.06, 0.14], [0, 1.3, 0.25]),
+        P('sph', eye, [0.035, 0.035, 0.035], [-0.06, 1.44, 0.32], [0, 0, 0], false), P('sph', eye, [0.035, 0.035, 0.035], [0.06, 1.44, 0.32], [0, 0, 0], false));
+      for (const x of [-0.12, 0.12]) add(P('box', dark, [0.15, 0.07, 0.24], [x, 0.04, 0.05]));
+      const limbs: THREE.Object3D[] = [];
+      for (const x of [-0.12, 0.12]) {
+        const leg = new THREE.Group(); leg.position.set(x, 0.58, 0);
+        leg.add(P('box', c2, [0.14, 0.52, 0.15], [0, -0.27, 0]));
+        add(leg); limbs.push(leg);
+      }
+      for (const x of [0.36, -0.36]) {
+        const arm = new THREE.Group(); arm.position.set(x, 1.18, 0.04);
+        arm.add(P('box', c1, [0.12, 0.5, 0.12], [0, -0.25, 0.04]));
+        if (x > 0) arm.add(P('cyl', mat(0x5a3d22, gh), [0.04, 0.55, 0.04], [0, -0.5, 0.2], [1.2, 0, 0]), P('dod', mat(0x77706a, gh), [0.11, 0.11, 0.11], [0, -0.62, 0.44]));
+        add(arm); limbs.push(arm);
+      }
+      legs.push(...limbs);
       if (big) {
-        for (const x of [-0.12, 0.12]) add(P('cone', mat(0x222222), [0.05, 0.3, 0.05], [x, 1.6, 0], [0, 0, x > 0 ? -0.5 : 0.5]));
-        for (const x of [-1, 1]) { const w = P('box', mat(def.color2, { ...gh, side: THREE.DoubleSide }), [0.9, 0.04, 0.5], [x * 0.5, 1.1, -0.25], [0, 0, x * 0.3]); add(w); wings.push(w); }
+        for (const x of [-0.1, 0.1]) add(P('cone', mat(0x222222, gh), [0.05, 0.32, 0.05], [x, 1.62, 0.12], [0, 0, x > 0 ? -0.5 : 0.5]));
+        for (const s of [-1, 1]) {
+          const w = new THREE.Group(); w.position.set(s * 0.15, 1.15, -0.2);
+          const m = P('wing', mat(def.color2, { ...gh, side: THREE.DoubleSide }), [1.1, 1, 1], [0, 0, 0], [0, 0, 0], false);
+          m.scale.x *= s;
+          w.add(m); add(w); wings.push(w);
+        }
       }
       height = 1.7; break;
     }
     case 'beast': {
-      add(P('sph', c1, [0.25, 0.25, 0.5], [0, 0.6, 0]), P('sph', c1, [0.18, 0.18, 0.24], [0, 0.78, 0.5]),
-        P('sph', eye, [0.035, 0.035, 0.035], [-0.08, 0.84, 0.7], [0, 0, 0], false), P('sph', eye, [0.035, 0.035, 0.035], [0.08, 0.84, 0.7], [0, 0, 0], false),
-        P('cone', c2, [0.05, 0.4, 0.05], [0, 0.65, -0.55], [-1.1, 0, 0]));
-      for (const x of [-0.15, 0.15]) for (const z of [-0.3, 0.3]) { const l = P('box', c2, [0.08, 0.4, 0.08], [x, 0.25, z]); add(l); legs.push(l); }
+      // Wolf-like quadruped: chest, snout, ears, mane and tail.
+      add(P('sph', c1, [0.26, 0.26, 0.55], [0, 0.62, 0]), P('sph', c1, [0.28, 0.3, 0.3], [0, 0.68, 0.3]),
+        P('sph', c2, [0.24, 0.2, 0.24], [0, 0.85, 0.35]),
+        P('sph', c1, [0.17, 0.17, 0.22], [0, 0.88, 0.6]), P('box', c2, [0.1, 0.09, 0.22], [0, 0.83, 0.8]),
+        P('sph', mat(0x111111, gh), [0.035, 0.03, 0.03], [0, 0.86, 0.91]),
+        P('cone', c1, [0.05, 0.14, 0.05], [-0.08, 1.04, 0.56]), P('cone', c1, [0.05, 0.14, 0.05], [0.08, 1.04, 0.56]),
+        P('cone', c2, [0.06, 0.45, 0.06], [0, 0.72, -0.62], [-1.0, 0, 0]),
+        P('sph', eye, [0.03, 0.03, 0.03], [-0.07, 0.92, 0.75], [0, 0, 0], false), P('sph', eye, [0.03, 0.03, 0.03], [0.07, 0.92, 0.75], [0, 0, 0], false));
+      for (const x of [-0.14, 0.14]) for (const z of [-0.35, 0.35]) {
+        const leg = new THREE.Group(); leg.position.set(x, 0.48, z);
+        leg.add(P('box', c2, [0.08, 0.46, 0.09], [0, -0.23, 0]));
+        add(leg); legs.push(leg);
+      }
       height = 1.1; break;
     }
     case 'spider': {
@@ -472,13 +518,24 @@ export function createEnemyModel(def: EnemyDef, ghost = false): EnemyModel {
     }
     case 'flyer': case 'dragon': {
       const dragon = def.shape === 'dragon';
-      add(P('sph', c1, [0.25, 0.22, dragon ? 0.6 : 0.3], [0, 0, 0]), P('sph', c1, [0.15, 0.15, 0.18], [0, 0.1, dragon ? 0.65 : 0.3]),
-        P('sph', eye, [0.03, 0.03, 0.03], [-0.06, 0.15, dragon ? 0.8 : 0.45], [0, 0, 0], false), P('sph', eye, [0.03, 0.03, 0.03], [0.06, 0.15, dragon ? 0.8 : 0.45], [0, 0, 0], false));
-      if (dragon) add(P('cone', c1, [0.1, 0.8, 0.1], [0, 0, -0.9], [-Math.PI / 2, 0, 0]));
+      const wingMat = mat(def.color2, { ...gh, side: THREE.DoubleSide });
+      if (dragon) {
+        add(P('sph', c1, [0.28, 0.25, 0.65], [0, 0, 0]),
+          P('cylT', c1, [0.1, 0.5, 0.1], [0, 0.22, 0.62], [0.9, 0, 0]),
+          P('box', c1, [0.18, 0.15, 0.32], [0, 0.4, 0.95]), P('box', c2, [0.12, 0.05, 0.2], [0, 0.32, 1.05]),
+          P('cone', c2, [0.04, 0.25, 0.04], [-0.07, 0.55, 0.85], [-0.8, 0, 0]), P('cone', c2, [0.04, 0.25, 0.04], [0.07, 0.55, 0.85], [-0.8, 0, 0]),
+          P('cone', c1, [0.1, 0.9, 0.1], [0, -0.05, -0.95], [-Math.PI / 2, 0, 0]),
+          P('sph', eye, [0.03, 0.03, 0.03], [-0.07, 0.45, 1.08], [0, 0, 0], false), P('sph', eye, [0.03, 0.03, 0.03], [0.07, 0.45, 1.08], [0, 0, 0], false));
+      } else {
+        add(P('sph', c1, [0.22, 0.2, 0.32], [0, 0, 0]), P('sph', c1, [0.15, 0.14, 0.16], [0, 0.1, 0.3]),
+          P('cone', c2, [0.05, 0.14, 0.05], [-0.07, 0.26, 0.28]), P('cone', c2, [0.05, 0.14, 0.05], [0.07, 0.26, 0.28]),
+          P('sph', eye, [0.03, 0.03, 0.03], [-0.06, 0.14, 0.44], [0, 0, 0], false), P('sph', eye, [0.03, 0.03, 0.03], [0.06, 0.14, 0.44], [0, 0, 0], false));
+      }
       for (const s of [-1, 1]) {
-        const pivot = new THREE.Group(); pivot.position.set(s * 0.15, 0.05, 0);
-        pivot.add(P('box', mat(def.color2, { ...gh, side: THREE.DoubleSide }), [dragon ? 1.1 : 0.7, 0.03, dragon ? 0.6 : 0.4], [s * (dragon ? 0.55 : 0.35), 0, 0]));
-        add(pivot); wings.push(pivot);
+        const pivot = new THREE.Group(); pivot.position.set(s * 0.15, 0.05, dragon ? 0.1 : 0);
+        const w = P('wing', wingMat, [dragon ? 1.5 : 0.85, 1, dragon ? 1.3 : 0.9], [0, 0, 0.2], [0, 0, 0], false);
+        w.scale.x *= s;
+        pivot.add(w); add(pivot); wings.push(pivot);
       }
       body.position.y = 2.2;
       height = 2.6; break;

@@ -5,8 +5,9 @@ import { ENEMY_BY_ID, ENEMIES } from '../shared/data/enemies';
 import { getWave, playerHpMul, VICTORY_WAVE, waveBaseHp } from '../shared/data/waves';
 import {
   assignSections, computeFlow, lanesOf, MAP_H, MAP_W, routeLength, SECTION_COUNT, SECTION_OF, SPAWNS, WALKABLE, cellIndex,
-  spawnsConnected, traceRoute,
+  setActiveMap, spawnsConnected, traceRoute, MAP_ID, EXIT, LANES, LANE_LAST_ZONE,
 } from '../shared/map';
+import { MAPS } from '../shared/maps';
 import { auraBuffs, effectiveStats } from '../shared/stats';
 
 describe('damage', () => {
@@ -72,7 +73,32 @@ describe('content', () => {
 });
 
 describe('map', () => {
+  it('every map is valid: 16 zones, reachable spawns and exits, zones for every player count', () => {
+    for (const def of MAPS) {
+      setActiveMap(def.id);
+      expect(MAP_ID).toBe(def.id);
+      expect(def.grid).toHaveLength(def.h);
+      for (const row of def.grid) expect(row).toHaveLength(def.w);
+      const counts = new Array(SECTION_COUNT).fill(0);
+      for (let i = 0; i < MAP_W * MAP_H; i++) if (SECTION_OF[i] >= 0) counts[SECTION_OF[i]]++;
+      for (const c of counts) expect(c, def.id).toBeGreaterThan(30);
+      expect(EXIT.some((e) => e === 1)).toBe(true);
+      expect(spawnsConnected(computeFlow(new Uint8Array(MAP_W * MAP_H))), def.id).toBe(true);
+      expect(LANE_LAST_ZONE.every((z) => z >= 0)).toBe(true);
+      for (let n = 1; n <= 16; n++) {
+        const ids = Array.from({ length: n }, (_, i) => 'p' + i);
+        const owners = assignSections(ids);
+        for (const id of ids) expect(owners.includes(id), `${def.id} n=${n} ${id}`).toBe(true);
+        const lanes = lanesOf(owners);
+        expect(lanes).toEqual(def.lanesFor(n));
+        expect(lanes.every((l) => l < LANES)).toBe(true);
+      }
+    }
+    setActiveMap('nordend');
+  });
+
   it('has four lanes with 16 build zones of equal size', () => {
+    setActiveMap('nordend');
     const counts = new Array(SECTION_COUNT).fill(0);
     for (let i = 0; i < MAP_W * MAP_H; i++) if (SECTION_OF[i] >= 0) counts[SECTION_OF[i]]++;
     for (const c of counts) expect(c).toBe(130);

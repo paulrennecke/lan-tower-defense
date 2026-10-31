@@ -1,4 +1,5 @@
 import { computeDamage } from '../shared/damage';
+import { MAP_BY_ID } from '../shared/maps';
 import { CLASS_BY_ID, RESEARCH_BY_ID, TOWER_BY_ID, type TowerStats } from '../shared/data/classes';
 import { auraBuffs, effectiveStats } from '../shared/stats';
 import { ENEMIES, ENEMY_BY_ID, ENEMY_INDEX, type EnemyDef } from '../shared/data/enemies';
@@ -7,8 +8,8 @@ import {
   getWave, playerHpMul, waveBaseHp, waveBounty, waveIncome, waveLumber,
 } from '../shared/data/waves';
 import {
-  EXIT, GATE, MAP_H, MAP_W, SPAWNS, WALKABLE, assignSections, cellIndex, computeFlow, isBuildable, lanesOf, nextCell,
-  SECTION_OF, spawnsConnected, zoneOf,
+  EXIT, GATE, LANE_LAST_ZONE, MAP_H, MAP_ID, MAP_W, SPAWNS, WALKABLE, assignSections, cellIndex, computeFlow, isBuildable,
+  laneZones, lanesOf, nextCell, SECTION_OF, setActiveMap, spawnsConnected,
 } from '../shared/map';
 import {
   EF_ARMORRED, EF_INVIS, EF_POISON, EF_REVEALED, EF_SLOW, EF_STUN,
@@ -87,10 +88,11 @@ export interface GameHooks {
 
 export const SELL_REFUND = 0.75;
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface GameSave {
   version: number;
+  map: string;
   time: number;
   wave: number;
   lives: number;
@@ -109,6 +111,8 @@ export interface GameSave {
 }
 
 export class Game {
+  /** Map the game is played on (the active map when the game was created). */
+  readonly mapId = MAP_ID;
   time = 0;
   wave = 0;
   lives = START_LIVES;
@@ -147,7 +151,7 @@ export class Game {
     // Each lane gets the full wave; HP scales with the number of players defending a lane.
     // All lanes leak into the shared lives, so more lanes get a little slack.
     const lanes = this.lanes.length;
-    this.hpMul = (playerHpMul(players.length) / lanes) * Math.pow(0.93, lanes - 1);
+    this.hpMul = (playerHpMul(players.length) / lanes) * Math.pow(0.93, lanes - 1) * MAP_BY_ID[this.mapId].hpScale;
     this.lives = START_LIVES + 10 * (lanes - 1);
   }
 
@@ -156,7 +160,7 @@ export class Game {
 
   /** Players owning at least one zone in the lane. */
   laneDefenders(lane: number): GamePlayer[] {
-    const ids = new Set(this.sectionOwners.filter((o, s) => o && s % 4 === lane));
+    const ids = new Set(laneZones(lane).map((s) => this.sectionOwners[s]).filter(Boolean));
     return [...ids].map((id) => this.players.get(id)!).filter(Boolean);
   }
 
@@ -432,7 +436,7 @@ export class Game {
     this.leaksByWave[e.wave] = (this.leaksByWave[e.wave] ?? 0) + e.def.lives;
     this.fx.push(['l', e.id]);
     // The owner of the last zone of the creep's lane takes the blame on the scoreboard.
-    const last = this.players.get(this.sectionOwners[zoneOf(e.lane, 3)]);
+    const last = this.players.get(this.sectionOwners[LANE_LAST_ZONE[e.lane]]);
     if (last) last.leaks++;
     if (this.lives <= 0 && !this.over) {
       this.over = true;
@@ -722,6 +726,7 @@ export class Game {
         const p = this.players.get(s.id)!;
         return { ...s, name: p.name, color: p.color, classId: p.classId, connected: lobby.get(s.id)?.connected ?? false, spectator: false };
       }),
+      map: this.mapId,
       sectionOwners: this.sectionOwners,
       towers: [...this.towers.values()].map((t) => this.towerInfo(t)),
       mines: [...this.mines.values()].map((m) => [m.id, m.x, m.y]),
@@ -740,7 +745,7 @@ export class Game {
 
   toSave(): GameSave {
     return {
-      version: SAVE_VERSION,
+      version: SAVE_VERSION, map: this.mapId,
       time: this.time, wave: this.wave, lives: this.lives, timer: this.timer, victory: this.victory,
       nextId: this.nextId, hpMul: this.hpMul, leaksByWave: { ...this.leaksByWave },
       players: [...this.players.values()].map((p) => ({ ...p, research: { ...p.research }, ready: false, connected: false })),
@@ -758,6 +763,7 @@ export class Game {
     if (!s || s.version !== SAVE_VERSION || !Array.isArray(s.players) || s.players.length === 0) {
       throw new Error('Ungültiger oder inkompatibler Spielstand.');
     }
+    setActiveMap(s.map);
     const players = s.players.filter((p) => CLASS_BY_ID[p.classId]);
     if (players.length !== s.players.length) throw new Error('Spielstand enthält unbekannte Klassen.');
     const g = new Game(players, hooks);

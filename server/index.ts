@@ -10,6 +10,8 @@ import {
   MAX_PLAYERS, PLAYER_COLORS, type ClientMsg, type GamePhase, type LobbyPlayer, type SaveInfo, type ServerMsg, type TargetMode,
 } from '../shared/protocol';
 import { Game, type GameHooks, type GamePlayer, type GameSave } from './game';
+import { setActiveMap } from '../shared/map';
+import { DEFAULT_MAP, MAP_BY_ID } from '../shared/maps';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STATIC_DIR = join(ROOT, 'dist', 'client');
@@ -24,6 +26,7 @@ interface Entry extends LobbyPlayer { token: string; ws: WebSocket | null; leftA
 const entries = new Map<string, Entry>();
 let hostId: string | null = null;
 let phase: GamePhase = 'lobby';
+let mapId = DEFAULT_MAP;
 let game: Game | null = null;
 let highscore = loadHighscore();
 
@@ -62,7 +65,7 @@ function saveGame(name: string): string {
   if (!game) throw new Error('Kein Spiel aktiv.');
   const info: SaveInfo = {
     id: saveId(name), name, date: new Date().toISOString(), wave: game.wave, lives: game.lives,
-    players: [...game.players.values()].map((p) => ({ name: p.name, classId: p.classId })),
+    players: [...game.players.values()].map((p) => ({ name: p.name, classId: p.classId })), map: game.mapId,
   };
   mkdirSync(SAVE_DIR, { recursive: true });
   writeFileSync(join(SAVE_DIR, info.id + '.json'), JSON.stringify({ info, game: game.toSave() } satisfies SaveFile));
@@ -111,7 +114,7 @@ function lobbyMsg(): ServerMsg {
   const players: LobbyPlayer[] = [...entries.values()].map(({ id, name, color, classId, ready, connected, spectator }) => ({
     id, name, color, classId, ready, connected, spectator,
   }));
-  return { t: 'lobby', players, hostId, phase, highscore, saves };
+  return { t: 'lobby', players, hostId, phase, highscore, saves, map: mapId };
 }
 function broadcastLobby() { broadcast(lobbyMsg()); }
 
@@ -153,6 +156,7 @@ function gameHooks(): GameHooks {
 
 function startGame() {
   const players = activePlayers().filter((e) => e.connected);
+  setActiveMap(mapId);
   runGame(new Game(players.map((p) => ({ id: p.id, name: p.name, color: p.color, classId: p.classId! })), gameHooks()));
   sysChat(`Das Spiel beginnt mit ${players.length} Spieler(n)! Baut eure Verteidigung – die erste Welle kommt bald.`);
 }
@@ -168,6 +172,7 @@ function loadGame(id: string, host: Entry): string | null {
   } catch (e) {
     return 'Spielstand konnte nicht geladen werden: ' + (e as Error).message;
   }
+  mapId = g.mapId;
   // Connected players take over the saved slots: same name first, then in join order (host first).
   const free = [...g.players.values()];
   const lobby = activePlayers().filter((e) => e.connected).sort((a, b) => Number(b === host) - Number(a === host));
@@ -322,6 +327,9 @@ wss.on('connection', (ws) => {
         break;
       case 'lobbyReady':
         if (phase === 'lobby' && !p.spectator) { p.ready = !!msg.ready && !!p.classId; broadcastLobby(); }
+        break;
+      case 'setMap':
+        if (phase === 'lobby' && p.id === hostId && MAP_BY_ID[msg.id]) { mapId = msg.id; broadcastLobby(); }
         break;
       case 'start': {
         if (phase !== 'lobby' || p.id !== hostId) return;
