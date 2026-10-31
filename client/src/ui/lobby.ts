@@ -84,8 +84,8 @@ export class LobbyUI {
             </ul>
             <h3>Steuerung</h3>
             <ul>
-              <li><b>1</b> Mauerblock · <b>2–7</b> Turm wählen · <b>Linksklick</b> bauen (<b>Shift</b> = mehrere) · <b>Rechtsklick/Esc</b> abbrechen</li>
-              <li>Turm anklicken: <b>U</b> aufwerten · <b>V</b> verkaufen · <b>F</b> Forschung · <b>N</b> bereit für nächste Welle</li>
+              <li><b>1</b> Mauerblock · <b>2–7</b> Turm wählen · <b>Linksklick</b> bauen (<b>Shift</b> = mehrere) · <b>Rechtsklick/Esc</b> abbrechen · per Tastatur: <b>Pfeiltasten</b> Cursor, <b>Enter</b> bauen</li>
+              <li>Turm anklicken: <b>U</b> aufwerten · <b>V</b> verkaufen · <b>F</b> Forschung · <b>N</b> bereit für nächste Welle · <b>P</b> Pause · <b>Strg+S</b> speichern · <b>R</b> Laufweg · <b>G</b> Raster · <b>T</b> Gold senden · <b>M</b> Ton · <b>Q</b> beenden (Host)</li>
               <li>Kamera: <b>WASD / Pfeiltasten</b>, Bildschirmrand, <b>rechte/mittlere Maustaste</b> ziehen, <b>Mausrad</b> zoomen, <b>Leertaste</b> = Portale &amp; Tor ansehen</li>
               <li><b>Alt+Klick</b> Ping für alle · <b>Enter</b> Chat · <b>Tab</b> Punktestand</li>
               <li><b>P</b> Pause · <b>💾</b> Spiel speichern · Spielstände lädt der Host hier in der Lobby</li>

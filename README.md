@@ -108,6 +108,8 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **1** | Mauerblock zum Mazen |
 | **2–7** | Turm zum Bauen wählen |
 | **Linksklick** | Bauen / Auswählen (**Shift** gedrückt = mehrere bauen) |
+| **Pfeiltasten** (im Baumodus) | Bau-Cursor bewegen (**Shift** = 5 Felder); die Kamera folgt am Rand, **WASD** bewegt sie weiter |
+| **Enter** (im Baumodus) | Turm am Cursor bauen (**Shift+Enter** = Baumodus behalten) |
 | **Rechtsklick / Esc** | Bauen abbrechen / Auswahl aufheben |
 | **U** / **V** | Ausgewählten Turm aufwerten / verkaufen |
 | **F** | Forschung |
@@ -120,8 +122,11 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **Tab** (halten) | Punktestand |
 | **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauraster an/aus**, **Gold senden**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
 | **P** | Spiel pausieren / fortsetzen (jeder Spieler) |
-| Menü → 💾 | Spiel speichern |
-| Menü → 🚪 | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |
+| **Strg+S** | Spiel speichern (Menü → 💾) |
+| **R** / **G** | Laufweg / Bauraster ein- und ausblenden |
+| **T** | Gold an einen Mitspieler senden |
+| **M** | Ton an/aus |
+| **Q** | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |
 
 Klick auf die Minimap bewegt die Kamera. Bei ausgewählten Türmen lässt sich die Zielwahl einstellen
 (Vorderster, Hinterster, Stärkster, Schwächster, Nächster). Die Aufwerten-/Verkaufen-Knöpfe haben feste Größe und Position;

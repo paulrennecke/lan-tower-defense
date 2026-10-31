@@ -46,6 +46,8 @@ export class World {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private raycaster = new THREE.Raycaster();
   edgePan = true;
+  /** Off while the keyboard build cursor uses the arrow keys. */
+  arrowKeysMoveCamera = true;
 
   constructor(private container: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -365,6 +367,7 @@ export class World {
     const el = this.renderer.domElement;
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+      if (e.ctrlKey || e.metaKey) return;
       this.keys.add(e.key.length === 1 ? e.key.toLowerCase() : e.key);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key));
@@ -398,10 +401,11 @@ export class World {
   private updateCamera(dt: number) {
     const speed = this.camDist * 1.2 * dt;
     let dx = 0, dz = 0;
-    if (this.keys.has('ArrowLeft') || this.keys.has('a')) dx -= 1;
-    if (this.keys.has('ArrowRight') || this.keys.has('d')) dx += 1;
-    if (this.keys.has('ArrowUp') || this.keys.has('w')) dz -= 1;
-    if (this.keys.has('ArrowDown') || this.keys.has('s')) dz += 1;
+    const arrows = this.arrowKeysMoveCamera;
+    if ((arrows && this.keys.has('ArrowLeft')) || this.keys.has('a')) dx -= 1;
+    if ((arrows && this.keys.has('ArrowRight')) || this.keys.has('d')) dx += 1;
+    if ((arrows && this.keys.has('ArrowUp')) || this.keys.has('w')) dz -= 1;
+    if ((arrows && this.keys.has('ArrowDown')) || this.keys.has('s')) dz += 1;
     if (this.edgePan && this.mouse.inside && document.hasFocus() && !this.dragging) {
       const m = 6;
       if (this.mouse.x <= m) dx -= 1;

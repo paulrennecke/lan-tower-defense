@@ -81,6 +81,7 @@ export class GameView {
       <div class="build-panel panel">
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
+        <div class="build-hint muted hidden" style="margin-top:6px;font-size:12px"><kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> bauen <kbd>⇧+Enter</kbd> mehrere <kbd>Esc</kbd> Abbruch</div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung <kbd>F</kbd></button>
         <div class="h-spectator hidden" style="margin-top:6px">
@@ -97,13 +98,13 @@ export class GameView {
       <div class="bottom-right">
         <div class="game-menu panel hidden">
           <button class="h-pause">⏸ Pause <kbd>P</kbd></button>
-          <button class="h-save">💾 Spiel speichern</button>
+          <button class="h-save">💾 Spiel speichern <kbd>Strg+S</kbd></button>
           <button class="h-score">📊 Punktestand <kbd>Tab</kbd></button>
-          <button class="h-route">🧭 Laufweg: an</button>
-          <button class="h-zones">🔲 Bauraster: an</button>
-          <button class="h-gift">💸 Gold senden</button>
-          <button class="h-sound">🔊 Ton: an</button>
-          <button class="h-quit hidden">🚪 Spiel beenden</button>
+          <button class="h-route">🧭 Laufweg: an <kbd>R</kbd></button>
+          <button class="h-zones">🔲 Bauraster: an <kbd>G</kbd></button>
+          <button class="h-gift">💸 Gold senden <kbd>T</kbd></button>
+          <button class="h-sound">🔊 Ton: an <kbd>M</kbd></button>
+          <button class="h-quit hidden">🚪 Spiel beenden <kbd>Q</kbd></button>
         </div>
         <button class="h-menu" title="Menü (F10)">☰ Menü <kbd>F10</kbd></button>
       </div>
@@ -158,18 +159,8 @@ export class GameView {
     const jc = this.q<HTMLSelectElement>('.j-class');
     jc.value = CLASSES[Math.floor(Math.random() * CLASSES.length)].id;
     this.q('.j-join').onclick = () => this.net.send({ t: 'joinGame', classId: jc.value });
-    this.q('.h-route').onclick = () => {
-      this.view.route = !this.view.route;
-      localStorage.setItem('td-route', this.view.route ? '1' : '0');
-      this.refreshRoutes();
-      this.updateViewButtons();
-    };
-    this.q('.h-zones').onclick = () => {
-      this.view.zones = !this.view.zones;
-      localStorage.setItem('td-zones', this.view.zones ? '1' : '0');
-      this.repaintZones();
-      this.updateViewButtons();
-    };
+    this.q('.h-route').onclick = () => this.toggleRoute();
+    this.q('.h-zones').onclick = () => this.toggleGrid();
     this.q('.game-menu').addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) this.toggleMenu(false); });
     window.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest?.('.bottom-right')) this.toggleMenu(false); });
     this.q('.h-score').onclick = () => this.toggleScore();
@@ -196,7 +187,7 @@ export class GameView {
       if (e.key === 'Enter') submitSave();
       else if (e.key === 'Escape') this.q('.o-save').classList.add('hidden');
     };
-    this.q('.h-sound').onclick = () => { sfx.setEnabled(!sfx.enabled); this.q('.h-sound').textContent = sfx.enabled ? '🔊 Ton: an' : '🔇 Ton: aus'; };
+    this.q('.h-sound').onclick = () => this.toggleSound();
     this.el.querySelectorAll<HTMLElement>('.overlay').forEach((o) => {
       o.addEventListener('mousedown', (e) => { if (e.target === o) o.classList.add('hidden'); });
     });
@@ -392,6 +383,9 @@ export class GameView {
   }
 
   private updateBuildButtons() {
+    // While a tower is being placed the arrow keys move the build cursor instead of the camera.
+    this.world.arrowKeysMoveCamera = !this.buildDef;
+    this.q('.build-hint').classList.toggle('hidden', !this.buildDef);
     const me = this.me;
     if (!me) return;
     this.el.querySelectorAll<HTMLButtonElement>('.build-btn').forEach((b) => {
@@ -408,7 +402,10 @@ export class GameView {
     if (!me || this.spectator || this.over) return;
     if (def.requires && !me.research[def.requires]) { this.toast('Erst erforschen!'); sfx.play('error'); return; }
     this.buildDef = this.buildDef?.id === def.id ? null : def;
-    if (this.buildDef) this.select(null);
+    if (this.buildDef) {
+      this.select(null);
+      if (!this.hover) this.hover = this.world.pickGround(window.innerWidth / 2, window.innerHeight / 2);
+    }
     this.updateBuildButtons();
     this.updateHoverVisuals();
   }
@@ -604,6 +601,18 @@ export class GameView {
       }
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       const key = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && key === 's') { e.preventDefault(); this.saveGame(); return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // Shortcuts that open a dialog must not type their letter into the dialog's input field.
+      if (key.length === 1 && 'rgtmq'.includes(key)) e.preventDefault();
+      // Place towers with the keyboard: arrows move the cursor, Enter builds (Shift+Enter keeps the build mode).
+      if (this.buildDef && e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        const n = e.shiftKey ? 5 : 1;
+        this.moveCursor(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowUp' ? -n : e.key === 'ArrowDown' ? n : 0);
+        return;
+      }
+      if (e.key === 'Enter' && this.buildDef && this.hover) { e.preventDefault(); this.placeAtCursor(e.shiftKey); return; }
       if (e.key === 'Tab') { e.preventDefault(); if (!e.repeat) this.toggleScore(true); return; }
       if (e.key === 'Enter') { e.preventDefault(); this.openChat(); return; }
       if (e.key === 'Escape') {
@@ -623,6 +632,11 @@ export class GameView {
       else if (key === 'f') this.toggleResearch();
       else if (key === 'n') this.toggleReady();
       else if (key === 'p') this.togglePause();
+      else if (key === 'r') this.toggleRoute();
+      else if (key === 'g') this.toggleGrid();
+      else if (key === 't') this.openGift();
+      else if (key === 'm') this.toggleSound();
+      else if (key === 'q') this.openQuit();
       else if (e.key === 'F10') { e.preventDefault(); this.toggleMenu(); }
     });
   }
@@ -637,8 +651,48 @@ export class GameView {
 
   private updateViewButtons() {
     const r = this.q('.h-route');
-    r.textContent = `🧭 Laufweg: ${this.view.route ? 'an' : 'aus'}`;
-    this.q('.h-zones').textContent = `🔲 Bauraster: ${this.view.zones ? 'an' : 'aus'}`;
+    r.innerHTML = `🧭 Laufweg: ${this.view.route ? 'an' : 'aus'} <kbd>R</kbd>`;
+    this.q('.h-zones').innerHTML = `🔲 Bauraster: ${this.view.zones ? 'an' : 'aus'} <kbd>G</kbd>`;
+  }
+
+  private toggleRoute() {
+    this.view.route = !this.view.route;
+    localStorage.setItem('td-route', this.view.route ? '1' : '0');
+    this.refreshRoutes();
+    this.updateViewButtons();
+  }
+
+  private toggleGrid() {
+    this.view.zones = !this.view.zones;
+    localStorage.setItem('td-zones', this.view.zones ? '1' : '0');
+    this.repaintZones();
+    this.updateViewButtons();
+  }
+
+  private toggleSound() {
+    sfx.setEnabled(!sfx.enabled);
+    this.q('.h-sound').innerHTML = `${sfx.enabled ? '🔊' : '🔇'} Ton: ${sfx.enabled ? 'an' : 'aus'} <kbd>M</kbd>`;
+  }
+
+  // ------------------------------------------------------------------ keyboard build cursor
+
+  /** Moves the build cursor (shared with the mouse hover) and keeps it on screen. */
+  private moveCursor(dx: number, dy: number) {
+    const base = this.hover ?? this.world.pickGround(window.innerWidth / 2, window.innerHeight / 2);
+    if (!base) return;
+    const cx = Math.min(MAP_W - 1, Math.max(0, base.cx + dx)), cy = Math.min(MAP_H - 1, Math.max(0, base.cy + dy));
+    this.hover = { x: cx + 0.5, y: cy + 0.5, cx, cy };
+    const v = toWorld(cx + 0.5, cy + 0.5, 0).project(this.world.camera);
+    if (Math.abs(v.x) > 0.8 || Math.abs(v.y) > 0.8) this.world.focus(cx + 0.5, cy + 0.5);
+    this.updateHoverVisuals();
+  }
+
+  private placeAtCursor(keepMode: boolean) {
+    const h = this.hover;
+    if (!h || !this.buildDef) return;
+    this.net.send({ t: 'build', def: this.buildDef.id, cx: h.cx, cy: h.cy });
+    if (!keepMode) { this.buildDef = null; this.updateBuildButtons(); }
+    this.updateHoverVisuals();
   }
 
   private toggleMenu(open?: boolean) {
