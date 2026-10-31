@@ -84,11 +84,14 @@ export class GameView {
       <div class="banner"></div>
       <div class="toast"></div>
       <div class="bottom-right">
-        <button class="h-pause" title="Pause (P)">⏸</button>
-        <button class="h-save" title="Spiel speichern">💾</button>
-        <button class="h-sound" title="Ton an/aus">🔊</button>
-        <button class="h-score" title="Punktestand (Tab)">📊</button>
-        <button class="h-quit hidden" title="Spiel beenden (nur Host)">🚪</button>
+        <div class="game-menu panel hidden">
+          <button class="h-pause">⏸ Pause <small>P</small></button>
+          <button class="h-save">💾 Spiel speichern</button>
+          <button class="h-score">📊 Punktestand <small>Tab</small></button>
+          <button class="h-sound">🔊 Ton: an</button>
+          <button class="h-quit hidden">🚪 Spiel beenden</button>
+        </div>
+        <button class="h-menu" title="Menü (F10)">☰ Menü <small>F10</small></button>
       </div>
       <div class="pause-box panel hidden">
         <h2>PAUSIERT</h2>
@@ -119,6 +122,10 @@ export class GameView {
 
     this.q('.h-ready').onclick = () => this.toggleReady();
     this.q('.h-research').onclick = () => this.toggleResearch();
+    // Every menu entry closes the menu after its action.
+    this.q('.h-menu').onclick = () => this.toggleMenu();
+    this.q('.game-menu').addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) this.toggleMenu(false); });
+    window.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest?.('.bottom-right')) this.toggleMenu(false); });
     this.q('.h-score').onclick = () => this.toggleScore();
     this.q('.h-pause').onclick = () => this.togglePause();
     this.q('.p-resume').onclick = () => this.togglePause();
@@ -143,7 +150,7 @@ export class GameView {
       if (e.key === 'Enter') submitSave();
       else if (e.key === 'Escape') this.q('.o-save').classList.add('hidden');
     };
-    this.q('.h-sound').onclick = () => { sfx.setEnabled(!sfx.enabled); this.q('.h-sound').textContent = sfx.enabled ? '🔊' : '🔇'; };
+    this.q('.h-sound').onclick = () => { sfx.setEnabled(!sfx.enabled); this.q('.h-sound').textContent = sfx.enabled ? '🔊 Ton: an' : '🔇 Ton: aus'; };
     this.el.querySelectorAll<HTMLElement>('.overlay').forEach((o) => {
       o.addEventListener('mousedown', (e) => { if (e.target === o) o.classList.add('hidden'); });
     });
@@ -519,6 +526,7 @@ export class GameView {
       if (e.key === 'Enter') { e.preventDefault(); this.openChat(); return; }
       if (e.key === 'Escape') {
         this.el.querySelectorAll('.overlay:not(.o-over)').forEach((o) => o.classList.add('hidden'));
+        this.toggleMenu(false);
         this.buildDef = null; this.select(null); this.updateBuildButtons(); return;
       }
       if (e.key === ' ') { e.preventDefault(); this.focusOwnSection(); return; }
@@ -533,7 +541,15 @@ export class GameView {
       else if (key === 'f') this.toggleResearch();
       else if (key === 'n') this.toggleReady();
       else if (key === 'p') this.togglePause();
+      else if (e.key === 'F10') { e.preventDefault(); this.toggleMenu(); }
     });
+  }
+
+  private toggleMenu(open?: boolean) {
+    const m = this.q('.game-menu');
+    const show = open ?? m.classList.contains('hidden');
+    m.classList.toggle('hidden', !show);
+    this.q('.h-menu').classList.toggle('active', show);
   }
 
   private togglePause() {
@@ -551,7 +567,7 @@ export class GameView {
     this.q('.h-pause').classList.toggle('hidden', this.spectator);
     this.q('.h-save').classList.toggle('hidden', this.spectator);
     this.q('.h-pause').classList.toggle('active', !!by);
-    this.q('.h-pause').textContent = by ? '▶' : '⏸';
+    this.q('.h-pause').innerHTML = by ? '▶ Fortsetzen <small>P</small>' : '⏸ Pause <small>P</small>';
     this.updateHud(true);
   }
 
