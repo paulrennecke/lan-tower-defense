@@ -45,6 +45,8 @@ export class GameView {
   private hostId: string | null = null;
   private paused: string | null = null;
   private options: GameOptions = { ...DEFAULT_OPTIONS };
+  /** Local display preferences (only this screen, stored in the browser). */
+  private view = { route: localStorage.getItem('td-route') !== '0', zones: localStorage.getItem('td-zones') !== '0' };
   /** Client-side copy of the tower grid and flow field for route previews and the "don't block" check. */
   private blocked = new Uint8Array(MAP_W * MAP_H);
   private routes: { x: number; y: number }[][] = [];
@@ -88,6 +90,8 @@ export class GameView {
           <button class="h-pause">⏸ Pause <small>P</small></button>
           <button class="h-save">💾 Spiel speichern</button>
           <button class="h-score">📊 Punktestand <small>Tab</small></button>
+          <button class="h-route">🧭 Laufweg: an</button>
+          <button class="h-zones">🔲 Bauzonen: an</button>
           <button class="h-sound">🔊 Ton: an</button>
           <button class="h-quit hidden">🚪 Spiel beenden</button>
         </div>
@@ -124,6 +128,18 @@ export class GameView {
     this.q('.h-research').onclick = () => this.toggleResearch();
     // Every menu entry closes the menu after its action.
     this.q('.h-menu').onclick = () => this.toggleMenu();
+    this.q('.h-route').onclick = () => {
+      this.view.route = !this.view.route;
+      localStorage.setItem('td-route', this.view.route ? '1' : '0');
+      this.refreshRoutes();
+      this.updateViewButtons();
+    };
+    this.q('.h-zones').onclick = () => {
+      this.view.zones = !this.view.zones;
+      localStorage.setItem('td-zones', this.view.zones ? '1' : '0');
+      this.repaintZones();
+      this.updateViewButtons();
+    };
     this.q('.game-menu').addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('button')) this.toggleMenu(false); });
     window.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest?.('.bottom-right')) this.toggleMenu(false); });
     this.q('.h-score').onclick = () => this.toggleScore();
@@ -193,9 +209,8 @@ export class GameView {
     for (const t of state.towers) this.ent.setTower(t);
     for (const [id, x, y] of state.mines) this.ent.addMine(id, x, y);
     this.refreshRoutes();
-    const colors = new Map([...this.players.values()].map((p) => [p.id, p.color]));
-    this.world.paintMap(this.sectionOwners, colors, this.you);
-    this.minimapBg = null;
+    this.repaintZones();
+    this.updateViewButtons();
     this.buildBuildPanel();
     this.q('.o-over').classList.add('hidden');
     this.q('.o-research').classList.add('hidden');
@@ -545,6 +560,22 @@ export class GameView {
     });
   }
 
+  /** Route lines are shown if the host allows it and the player has not hidden them. */
+  private get routeVisible() { return this.options.showRoute && this.view.route; }
+
+  private repaintZones() {
+    const colors = new Map([...this.players.values()].map((p) => [p.id, p.color]));
+    this.world.paintMap(this.sectionOwners, colors, this.you, this.view.zones);
+    this.minimapBg = null;
+  }
+
+  private updateViewButtons() {
+    const r = this.q('.h-route');
+    r.textContent = `🧭 Laufweg: ${this.view.route ? 'an' : 'aus'}`;
+    r.classList.toggle('hidden', !this.options.showRoute);
+    this.q('.h-zones').textContent = `🔲 Bauzonen: ${this.view.zones ? 'an' : 'aus'}`;
+  }
+
   private toggleMenu(open?: boolean) {
     const m = this.q('.game-menu');
     const show = open ?? m.classList.contains('hidden');
@@ -642,7 +673,7 @@ export class GameView {
     for (const t of this.ent.towers.values()) this.blocked[cellIndex(t.info.cx, t.info.cy)] = 1;
     const flow = computeFlow(this.blocked);
     this.routes = lanesOf(this.sectionOwners).map((l) => traceRoute(flow, this.blocked, SPAWNS[l].x, SPAWNS[l].y));
-    this.world.setRoutes(this.options.showRoute ? this.routes : []);
+    this.world.setRoutes(this.routeVisible ? this.routes : []);
     this.blockCheck.key = '';
     this.renderMazeInfo();
   }
@@ -666,7 +697,7 @@ export class GameView {
     const lanes = lanesOf(this.sectionOwners);
     const mine = new Set<number>();
     const el = this.q('.h-maze');
-    el.classList.toggle('hidden', !this.options.showRoute);
+    el.classList.toggle('hidden', !this.routeVisible);
     this.sectionOwners.forEach((o, s) => { if (o === this.you) mine.add(MAP_DEF.zoneHome[s]); });
     const parts = lanes.map((l, i) => `<span class="${mine.has(l) ? 'gold' : 'muted'}">${Math.round(routeLength(this.routes[i] ?? []))}</span>`);
     el.innerHTML = `🧭 Weglänge: ${parts.join(' · ')}`;
@@ -792,7 +823,7 @@ export class GameView {
           b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
           if (!WALKABLE[i]) continue;
           const s = SECTION_OF[i];
-          if (s >= 0 && this.sectionOwners.length) {
+          if (s >= 0 && this.sectionOwners.length && this.view.zones) {
             const col = this.players.get(this.sectionOwners[s])?.color ?? 0xffffff;
             b.fillStyle = hex(col) + (this.sectionOwners[s] === this.you ? '30' : '14');
             b.fillRect(x * sx, y * sy, sx + 0.5, sy + 0.5);
@@ -814,7 +845,7 @@ export class GameView {
     }
     ctx.strokeStyle = 'rgba(230,60,40,0.8)';
     ctx.lineWidth = 1;
-    for (const r of this.options.showRoute ? this.routes : []) {
+    for (const r of this.routeVisible ? this.routes : []) {
       ctx.beginPath();
       r.forEach((p, i) => (i ? ctx.lineTo(p.x * sx, p.y * sy) : ctx.moveTo(p.x * sx, p.y * sy)));
       ctx.stroke();

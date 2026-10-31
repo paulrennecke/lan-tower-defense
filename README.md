@@ -120,7 +120,7 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 | **Alt + Klick** | Ping auf der Karte für alle |
 | **Enter** | Chat |
 | **Tab** (halten) | Punktestand |
-| **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, Ton, Spiel beenden |
+| **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauzonen-Linien an/aus**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
 | **P** | Spiel pausieren / fortsetzen (jeder Spieler) |
 | Menü → 💾 | Spiel speichern |
 | Menü → 🚪 | Spiel beenden (nur Host) – fragt: speichern, nicht speichern oder abbrechen; danach sind alle wieder in der Lobby |

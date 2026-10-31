@@ -308,7 +308,7 @@ export class World {
   }
 
   /** Paints snow, trodden lanes and the build zones of every player onto the map texture. */
-  paintMap(sectionOwners: string[], colors: Map<string, number>, you: string) {
+  paintMap(sectionOwners: string[], colors: Map<string, number>, you: string, showZones = true) {
     const ctx = this.mapCanvas.getContext('2d')!;
     const S = 24;
     const rand = mulberry(42);
@@ -344,6 +344,12 @@ export class World {
         ctx.stroke();
       }
     }
+    // Zone tint, grid and borders can be hidden by the player.
+    if (showZones) this.paintZones(ctx, S, sectionOwners, colors, you);
+    this.mapTexture.needsUpdate = true;
+  }
+
+  private paintZones(ctx: CanvasRenderingContext2D, S: number, sectionOwners: string[], colors: Map<string, number>, you: string) {
     for (let y = 0; y < MAP_H; y++) {
       for (let x = 0; x < MAP_W; x++) {
         const i = cellIndex(x, y);
@@ -383,7 +389,6 @@ export class World {
         ctx.stroke();
       }
     }
-    this.mapTexture.needsUpdate = true;
   }
 
   addAnimated(o: THREE.Object3D) { this.animated.push(o); }
