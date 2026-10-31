@@ -39,6 +39,8 @@ export class GameView {
   private highscore = 0;
   private buildDef: TowerDef | null = null;
   private selected: Selection = null;
+  /** Keyboard selection mode: arrows move a cursor, Enter/Space selects the tower below it. */
+  private cursorMode = false;
   private hover: { cx: number; cy: number; x: number; y: number } | null = null;
   private pings: { x: number; y: number; color: number; until: number }[] = [];
   private active = false;
@@ -81,7 +83,7 @@ export class GameView {
       <div class="build-panel panel">
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
-        <div class="build-hint muted hidden" style="margin-top:6px;font-size:12px"><kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> bauen <kbd>Esc</kbd> Ende</div>
+        <div class="build-hint muted" style="margin-top:6px;font-size:12px"><kbd>X</kbd> Cursor <kbd>Q</kbd> / <kbd>E</kbd> Turm wählen</div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung <kbd>F</kbd></button>
         <div class="h-spectator hidden" style="margin-top:6px">
@@ -385,8 +387,12 @@ export class GameView {
 
   private updateBuildButtons() {
     // While a tower is being placed the arrow keys move the build cursor instead of the camera.
-    this.world.arrowKeysMoveCamera = !this.buildDef;
-    this.q('.build-hint').classList.toggle('hidden', !this.buildDef);
+    this.world.arrowKeysMoveCamera = !this.buildDef && !this.cursorMode;
+    this.q('.build-hint').innerHTML = this.buildDef
+      ? '<kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> bauen <kbd>Esc</kbd> Ende'
+      : this.cursorMode
+        ? '<kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> wählen <kbd>U</kbd> aufwerten <kbd>V</kbd> verkaufen <kbd>C</kbd> Zielmodus <kbd>Esc</kbd> Ende'
+        : '<kbd>X</kbd> Cursor <kbd>Q</kbd> / <kbd>E</kbd> Turm wählen';
     const me = this.me;
     if (!me) return;
     this.el.querySelectorAll<HTMLButtonElement>('.build-btn').forEach((b) => {
@@ -404,6 +410,7 @@ export class GameView {
     if (def.requires && !me.research[def.requires]) { this.toast('Erst erforschen!'); sfx.play('error'); return; }
     this.buildDef = this.buildDef?.id === def.id ? null : def;
     if (this.buildDef) {
+      this.cursorMode = false;
       this.select(null);
       if (!this.hover) this.hover = this.world.pickGround(window.innerWidth / 2, window.innerHeight / 2);
     }
@@ -608,19 +615,20 @@ export class GameView {
       if (key.length === 1 && 'rgtmq'.includes(key)) e.preventDefault();
       // Place towers with the keyboard: arrows move the cursor, Enter or Space builds. The tower type and the cursor position
       // stay selected, so several towers can be placed in a row; Esc ends the build mode.
-      if (this.buildDef && e.key.startsWith('Arrow')) {
+      if ((this.buildDef || this.cursorMode) && e.key.startsWith('Arrow')) {
         e.preventDefault();
         const n = e.shiftKey ? 5 : 1;
         this.moveCursor(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowUp' ? -n : e.key === 'ArrowDown' ? n : 0);
         return;
       }
       if ((e.key === 'Enter' || e.key === ' ') && this.buildDef && this.hover) { e.preventDefault(); this.placeAtCursor(true); return; }
+      if ((e.key === 'Enter' || e.key === ' ') && this.cursorMode && this.hover) { e.preventDefault(); this.selectAtCursor(); return; }
       if (e.key === 'Tab') { e.preventDefault(); if (!e.repeat) this.toggleScore(true); return; }
       if (e.key === 'Enter') { e.preventDefault(); this.openChat(); return; }
       if (e.key === 'Escape') {
         this.el.querySelectorAll('.overlay:not(.o-over)').forEach((o) => o.classList.add('hidden'));
         this.toggleMenu(false);
-        this.buildDef = null; this.select(null); this.updateBuildButtons(); return;
+        this.buildDef = null; this.cursorMode = false; this.select(null); this.updateBuildButtons(); this.updateHoverVisuals(); return;
       }
       if (e.key === ' ') { e.preventDefault(); this.focusNext(); return; }
       if (/^[1-9]$/.test(e.key) && this.myClass) {
@@ -631,6 +639,13 @@ export class GameView {
       const sel = this.selected?.kind === 'tower' ? this.ent.towers.get(this.selected.id) : undefined;
       if (key === 'u' && sel && this.canUse(sel.info)) { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: sel.info.id }); }
       else if (key === 'v' && sel && this.canUse(sel.info)) this.net.send({ t: 'sell', id: sel.info.id });
+      else if (key === 'c' && sel && this.canUse(sel.info)) {
+        const modes = Object.keys(TARGET_MODE_NAMES) as TargetMode[];
+        this.net.send({ t: 'mode', id: sel.info.id, mode: modes[(modes.indexOf(sel.info.mode) + 1) % modes.length] });
+      }
+      else if (key === 'x') this.toggleCursorMode();
+      else if (key === 'q' && !e.shiftKey) this.cycleTower(-1);
+      else if (key === 'e') this.cycleTower(1);
       else if (key === 'f') this.toggleResearch();
       else if (key === 'n') this.toggleReady();
       else if (key === 'p') this.togglePause();
@@ -688,6 +703,39 @@ export class GameView {
     const v = toWorld(cx + 0.5, cy + 0.5, 0).project(this.world.camera);
     if (Math.abs(v.x) > 0.8 || Math.abs(v.y) > 0.8) this.world.focus(cx + 0.5, cy + 0.5);
     this.updateHoverVisuals();
+  }
+
+  private toggleCursorMode() {
+    if (this.spectator || this.over) return;
+    this.cursorMode = !this.cursorMode;
+    if (this.cursorMode) {
+      this.buildDef = null;
+      const t = this.selected?.kind === 'tower' ? this.ent.towers.get(this.selected.id) : undefined;
+      this.hover = t ? { x: t.info.cx + 0.5, y: t.info.cy + 0.5, cx: t.info.cx, cy: t.info.cy } : this.hover ?? this.world.pickGround(window.innerWidth / 2, window.innerHeight / 2);
+    }
+    this.updateBuildButtons();
+    this.updateHoverVisuals();
+  }
+
+  private selectAtCursor() {
+    const h = this.hover;
+    if (!h) return;
+    const t = [...this.ent.towers.values()].find((x) => x.info.cx === h.cx && x.info.cy === h.cy);
+    this.select(t ? { kind: 'tower', id: t.info.id } : null);
+  }
+
+  /** Q / E: select the previous / next tower you can control (sorted by position) and move the camera there. */
+  private cycleTower(dir: number) {
+    if (this.spectator || this.over) return;
+    const list = [...this.ent.towers.values()].filter((t) => this.canUse(t.info)).sort((a, b) => a.info.cy - b.info.cy || a.info.cx - b.info.cx);
+    if (!list.length) return;
+    const cur = this.selected?.kind === 'tower' ? list.findIndex((t) => t.info.id === this.selected!.id) : -1;
+    const next = list[cur < 0 ? (dir > 0 ? 0 : list.length - 1) : (cur + dir + list.length) % list.length];
+    this.buildDef = null;
+    this.hover = { x: next.info.cx + 0.5, y: next.info.cy + 0.5, cx: next.info.cx, cy: next.info.cy };
+    this.world.focus(next.info.cx + 0.5, next.info.cy + 0.5);
+    this.updateBuildButtons();
+    this.select({ kind: 'tower', id: next.info.id });
   }
 
   private placeAtCursor(keepMode: boolean) {
@@ -780,8 +828,12 @@ export class GameView {
       if (eff.aura) w.showRange(w.auraRing, h.cx + 0.5, h.cy + 0.5, eff.aura.range); else w.auraRing.visible = false;
       return;
     }
-    w.hoverMesh.visible = false;
     w.hideGhost();
+    w.hoverMesh.visible = this.cursorMode && !!h;
+    if (this.cursorMode && h) {
+      toWorld(h.cx + 0.5, h.cy + 0.5, 0.06, w.hoverMesh.position);
+      (w.hoverMesh.material as any).color.setHex(0xffd040);
+    }
     if (!this.selected) { w.rangeRing.visible = false; w.auraRing.visible = false; }
   }
 
