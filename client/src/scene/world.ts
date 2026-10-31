@@ -409,7 +409,7 @@ export class World {
     window.addEventListener('blur', () => this.keys.clear());
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.camDist = THREE.MathUtils.clamp(this.camDist * (e.deltaY > 0 ? 1.1 : 0.9), 14, 110);
+      this.camDist = THREE.MathUtils.clamp(this.camDist * (e.deltaY > 0 ? 1.1 : 0.9), 14, Math.max(110, MAP_W * 1.9));
     }, { passive: false });
     el.addEventListener('mousedown', (e) => {
       if (e.button === 1 || e.button === 2) this.dragging = { x: e.clientX, y: e.clientY };

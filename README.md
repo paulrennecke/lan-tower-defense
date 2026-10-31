@@ -48,6 +48,7 @@ netsh advfirewall firewall add rule name="LAN Tower Defense" dir=in action=allow
 2. **Karten** (Northrend-Look: verschneite Plateaus mit Felskanten, Eispfade, zugefrorenes Wasser):
    - **Wintermaul X9** – die klassische Karte: drei Portale im Norden, darunter ein breites Mittelfeld mit
      Eiskanälen, der große Felsgraben (∩) zwingt die Gegner links oder rechts herum, das Tor liegt im See im Süden.
+   - **Wintermaul X9 XL** – dasselbe Layout wie X9, aber 1,6-mal so groß (80×80 Felder): viel mehr Platz für lange Labyrinthe.
    - **Nordend (4 Spuren)** – vier getrennte Spuren zwischen Eisklippen, unten ein gemeinsamer Trichter zum Tor.
    - **Zwillingsgletscher** – zwei Spuren biegen nach innen ab und vereinen sich zu einer Schlucht nach Süden.
 

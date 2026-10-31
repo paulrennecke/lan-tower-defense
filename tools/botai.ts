@@ -1,5 +1,5 @@
 import { CLASS_BY_ID, towerDps, type TowerDef } from '../shared/data/classes';
-import { MAP_DEF, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, cellIndex, computeFlow, lanesOf, nextCell, traceRoute } from '../shared/map';
+import { GATE, MAP_DEF, MAP_H, MAP_ID, MAP_W, SECTION_OF, SPAWNS, cellIndex, computeFlow, lanesOf, nextCell, traceRoute } from '../shared/map';
 import type { Game } from '../server/game';
 
 /**
@@ -126,7 +126,17 @@ export function botAct(game: Game, pid: string, rnd: () => number = Math.random)
 /** Attack towers go onto maze wall cells (or replace a block there) where they cover the most route. */
 function buildBest(game: Game, pid: string, def: TowerDef, plan: number[][]) {
   const range = def.levels[0].range || 4;
-  const routes = lanesOf(game.sectionOwners).map((l) => traceRoute(game.flow, game.blocked, SPAWNS[l].x, SPAWNS[l].y));
+  const lanes = lanesOf(game.sectionOwners);
+  const ground = lanes.map((l) => traceRoute(game.flow, game.blocked, SPAWNS[l].x, SPAWNS[l].y));
+  // Flyers go straight from the portal to the gate – air towers belong next to that line.
+  const flight = lanes.map((l) => {
+    const s = SPAWNS[l], pts: { x: number; y: number }[] = [];
+    const n = Math.ceil(Math.hypot(GATE.x - s.x, GATE.y - s.y));
+    for (let i = 0; i <= n; i++) pts.push({ x: s.x + ((GATE.x - s.x) * i) / n, y: s.y + ((GATE.y - s.y) * i) / n });
+    return pts;
+  });
+  const st = def.levels[0];
+  const routes = st.ground ? (st.air ? [...ground, ...flight] : ground) : flight;
   const cover = (c: number) => {
     const x = (c % MAP_W) + 0.5, y = Math.floor(c / MAP_W) + 0.5;
     let n = 0;

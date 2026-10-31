@@ -125,6 +125,29 @@ function twin(): MapDef {
   };
 }
 
-export const MAPS: MapDef[] = [x9(), nordend(), twin()];
+/** Scales a map up (nearest neighbour on the character grid) – same layout, more room for mazes. */
+function scaled(base: MapDef, f: number, id: string, name: string, desc: string, hpScale: number): MapDef {
+  const w = Math.round(base.w * f), h = Math.round(base.h * f);
+  const grid: string[] = [];
+  for (let y = 0; y < h; y++) {
+    let row = '';
+    for (let x = 0; x < w; x++) row += base.grid[Math.min(base.h - 1, Math.floor(y / f))][Math.min(base.w - 1, Math.floor(x / f))];
+    grid.push(row);
+  }
+  // Only the outermost row of the exit stays the exit; the rows before it become open ice.
+  for (let y = 0; y < h - 1; y++) grid[y] = grid[y].replace(/E/g, '.');
+  return {
+    ...base, id, name, desc, w, h, grid, hpScale,
+    spawns: base.spawns.map((s) => ({ x: s.x * f, y: 0.5 })),
+    botWalls: base.botWalls?.map(([x0, y0, x1, y1]) => [Math.floor(x0 * f), Math.floor(y0 * f), Math.floor((x1 + 1) * f) - 1, Math.floor(y0 * f) + Math.round((y1 - y0) * f)]),
+  };
+}
+
+export const MAPS: MapDef[] = [
+  x9(),
+  scaled(x9(), 1.6, 'x9xl', 'Wintermaul X9 XL', 'X9 in groß: gleiches Layout, aber 1,6-mal so weit – viel Platz für lange Labyrinthe.', 0.75),
+  nordend(),
+  twin(),
+];
 export const MAP_BY_ID: Record<string, MapDef> = Object.fromEntries(MAPS.map((m) => [m.id, m]));
 export const DEFAULT_MAP = 'x9';
