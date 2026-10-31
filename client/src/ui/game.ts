@@ -391,7 +391,7 @@ export class GameView {
     this.q('.build-hint').innerHTML = this.buildDef
       ? '<kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> bauen <kbd>Esc</kbd> Ende'
       : this.cursorMode
-        ? '<kbd>←↑↓→</kbd> Cursor <kbd>⇧</kbd> schneller<br><kbd>Enter</kbd> / <kbd>Leertaste</kbd> wählen <kbd>U</kbd> aufwerten <kbd>V</kbd> verkaufen <kbd>C</kbd> Zielmodus <kbd>Esc</kbd> Ende'
+        ? '<kbd>←↑↓→</kbd> Cursor (Turm wird direkt geöffnet) <kbd>⇧</kbd> schneller<br><kbd>U</kbd> aufwerten <kbd>V</kbd> verkaufen <kbd>C</kbd> Zielmodus <kbd>Esc</kbd> Ende'
         : '<kbd>X</kbd> Cursor <kbd>Q</kbd> / <kbd>E</kbd> Turm wählen';
     const me = this.me;
     if (!me) return;
@@ -703,6 +703,7 @@ export class GameView {
     const v = toWorld(cx + 0.5, cy + 0.5, 0).project(this.world.camera);
     if (Math.abs(v.x) > 0.8 || Math.abs(v.y) > 0.8) this.world.focus(cx + 0.5, cy + 0.5);
     this.updateHoverVisuals();
+    if (this.cursorMode) this.selectAtCursor();
   }
 
   private toggleCursorMode() {
