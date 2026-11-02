@@ -43,6 +43,7 @@ export class GameView {
   private multi: number[] = [];
   private boxDrag: { x: number; y: number; add: boolean; moved: boolean } | null = null;
   private dimKey = '';
+  private lastUpgradeKey = '';
   private hover: { cx: number; cy: number; x: number; y: number } | null = null;
   private pings: { x: number; y: number; color: number; until: number }[] = [];
   private active = false;
@@ -534,6 +535,20 @@ export class GameView {
     return this.multi.map((id) => this.ent.towers.get(id)).filter((t): t is NonNullable<typeof t> => !!t && this.canUse(t.info));
   }
 
+  /** Whether the player can pay for the next upgrade of this tower. */
+  private canAffordUpgrade(info: TowerInfo): boolean {
+    const me = this.me;
+    const up = this.upgradeInfo(info);
+    return !!up && !!me && me.gold >= up.gold && me.lumber >= up.lumber;
+  }
+
+  /** Changes whenever the enabled state of the upgrade button of the current selection changes. */
+  private upgradeKey(): string {
+    if (this.selected?.kind === 'tower') { const t = this.ent.towers.get(this.selected.id); return t ? String(this.canAffordUpgrade(t.info)) : ''; }
+    if (this.selected?.kind === 'multi') return String(this.multiTowers().some((t) => this.canAffordUpgrade(t.info)));
+    return '';
+  }
+
   private upgradeInfo(info: TowerInfo) {
     const def = TOWER_BY_ID[info.def];
     const max = def.maxLevel ?? 2;
@@ -576,7 +591,7 @@ export class GameView {
         <div class="muted" style="margin-top:4px">Kills: ${kills} · Schaden: ${fmt(damage)}</div>
       </div>
       <div class="actions">
-        <button class="primary up" ${upgradable ? '' : 'disabled'}><span>⬆ Alle aufwerten</span><small>${upgradable ? `${upgradable}× · ${gold} 💰${lumber ? ` ${lumber} 🌲` : ''}` : 'Alle auf Max.'}</small><kbd>U</kbd></button>
+        <button class="primary up" ${towers.some((t) => this.canAffordUpgrade(t.info)) ? '' : 'disabled'}><span>⬆ Alle aufwerten</span><small>${upgradable ? `${upgradable}× · ${gold} 💰${lumber ? ` ${lumber} 🌲` : ''}` : 'Alle auf Max.'}</small><kbd>U</kbd></button>
         <button class="clear"><span>Auswahl aufheben</span><small>&nbsp;</small><kbd>Esc</kbd></button>
       </div>
       ${shooters.length ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${cur === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
@@ -593,6 +608,7 @@ export class GameView {
   private renderSelection() {
     const panel = this.q('.sel-panel');
     const sel = this.selected;
+    this.lastUpgradeKey = this.upgradeKey();
     if (sel?.kind !== 'multi') this.world.setMultiRings([]);
     if (!sel) { panel.classList.add('hidden'); this.world.selectRing.visible = false; return; }
     panel.classList.remove('hidden');
@@ -619,7 +635,7 @@ export class GameView {
           <div class="stats">${statLines(eff, def.levels[info.level]).map(([k, v]) => `<div><span class="muted">${k}:</span> ${v}</div>`).join('')}</div>
         </div>
         ${mine ? `<div class="actions">
-          <button class="primary up" ${next ? '' : 'disabled'}>${upLabel}</button>
+          <button class="primary up" ${next && this.canAffordUpgrade(info) ? '' : 'disabled'}>${upLabel}</button>
           <button class="sell"><span>Verkaufen</span><small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small><kbd>Entf</kbd></button>
         </div>` : ''}
         ${mine && eff.dmg > 0 ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${info.mode === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
@@ -1140,6 +1156,8 @@ export class GameView {
     this.q('.h-hs').textContent = String(Math.max(this.highscore, this.wave - 1));
     this.updateBuildButtons();
     this.updateDim();
+    const uk = this.upgradeKey();
+    if (uk !== this.lastUpgradeKey) { this.lastUpgradeKey = uk; if (this.selected && this.selected.kind !== 'enemy') this.renderSelection(); }
     this.renderWavePreview();
     this.renderPlayers();
     this.renderScore();
