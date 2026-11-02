@@ -46,8 +46,7 @@ describe('server protocol', () => {
     a.send({ t: 'build', def: 'h_watch', cx: cell!.cx, cy: cell!.cy });
     const tower = await b.wait('tower');
     expect(tower.tower.owner).toBe(wa.you);
-    const snap = await b.wait('snap');
-    expect(snap.players.find((p) => p.id === wa.you)!.gold).toBeLessThan(450);
+    await b.wait('snap', (m) => m.players.find((p) => p.id === wa.you)!.gold < 450);
 
     // Reconnect with token restores the game state.
     b.close();

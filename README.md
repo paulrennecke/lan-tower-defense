@@ -107,24 +107,23 @@ Jeder Turm hat **3 Stufen** (Mauerblöcke nur eine). Jede Klasse hat **4 Forschu
 |---|---|
 | **1** | Mauerblock zum Mazen |
 | **2–7** | Turm zum Bauen wählen |
-| **Linksklick** | Bauen / Auswählen (**Shift** gedrückt = mehrere bauen) |
-| **Pfeiltasten** (im Baumodus) | Bau-Cursor bewegen (**Shift** = 5 Felder); die Kamera folgt am Rand, **WASD** bewegt sie weiter |
+| **Linksklick** | Bauen (der Turmtyp bleibt gewählt, **Esc** / Rechtsklick beendet) / Turm auswählen; **mit der Maus ziehen** = Auswahlrahmen für mehrere Türme (**Shift** = zur Auswahl hinzufügen) |
+| **Pfeiltasten** | Cursor bewegen (**Shift** = 5 Felder), immer aktiv; der Turm unter dem Cursor wird sofort geöffnet, die Kamera folgt am Rand, **WASD** bewegt sie weiter |
 | **Enter** / **Leertaste** (im Baumodus) | Turm am Cursor bauen – Turmtyp und Cursorposition bleiben gewählt, so lassen sich mehrere Türme hintereinander setzen; **Esc** beendet den Baumodus |
-| **X** | Auswahl-Cursor: Pfeile bewegen den Cursor, der Turm darunter wird sofort geöffnet |
 | **Q** / **E** | Vorherigen / nächsten eigenen Turm wählen (Kamera springt hin) |
-| **U** / **V** / **C** | Gewählten Turm aufwerten / verkaufen / Zielmodus umschalten |
+| **U** / **V** oder **Entf** / **C** | Gewählten Turm aufwerten / verkaufen / Zielmodus umschalten (bei mehreren gewählten Türmen: alle aufwerten / Zielmodus für alle) |
 | **Rechtsklick / Esc** | Bauen abbrechen / Auswahl aufheben |
-| **U** / **V** | Ausgewählten Turm aufwerten / verkaufen |
 | **F** | Forschung öffnen; darin kauft **1**–**4** die jeweilige Forschung, **Esc** schließt |
-| **N** | Bereit für die nächste Welle (wenn alle bereit sind, startet sie in 3 s) |
-| **WASD / Pfeiltasten**, Bildschirmrand, **rechte/mittlere Maustaste ziehen** | Kamera bewegen |
+| **N** | Bereit. Die **erste Welle startet erst, wenn alle Spieler bereit sind**; danach startet sie nach dem Countdown oder 3 s nach dem letzten „Bereit“ |
+| **F1** | Spielregeln (Überblick und genaue Gold-/Holz-Zahlen) |
+| **WASD**, Bildschirmrand, **rechte/mittlere Maustaste ziehen** | Kamera bewegen |
 | **Mausrad** | Zoomen |
 | **Leertaste** | Kamera zu den Portalen und zum Tor |
 | **Alt + Klick** | Ping auf der Karte für alle |
 | **Enter** | Chat |
 | **B** (halten) | Punktestand |
 | **Tab** / **Shift+Tab** | Durch die Buttons springen, **Enter** / **Leertaste** löst den fokussierten Button aus |
-| **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauraster an/aus**, **Gold senden**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
+| **F10** / ☰ Menü (unten rechts) | Menü: Pause, Speichern, Punktestand, **Laufweg an/aus**, **Bauraster an/aus**, **Gold senden**, **Spielregeln**, Ton, Spiel beenden (Anzeige-Schalter gelten nur für den eigenen Bildschirm und werden gemerkt) |
 | **P** | Spiel pausieren / fortsetzen (jeder Spieler) |
 | **Strg+S** | Spiel speichern (Menü → 💾) |
 | **R** / **G** | Laufweg / Bauraster ein- und ausblenden |

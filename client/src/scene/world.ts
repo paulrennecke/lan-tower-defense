@@ -106,6 +106,53 @@ export class World {
 
   // ------------------------------------------------------------------ build ghost
 
+  private dim: { canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; mesh: THREE.Mesh; map: string } | null = null;
+  private multiRings: THREE.Mesh[] = [];
+
+  /** Greys out the cells flagged in `mask`: 1 = cannot be built on, 2 = buildable but not affordable. Null hides the overlay. */
+  setDim(mask: Uint8Array | null) {
+    if (!mask) { if (this.dim) this.dim.mesh.visible = false; return; }
+    if (!this.dim || this.dim.map !== this.mapId) {
+      if (this.dim) { this.scene.remove(this.dim.mesh); this.dim.tex.dispose(); }
+      const canvas = document.createElement('canvas');
+      canvas.width = MAP_W * 8; canvas.height = MAP_H * 8;
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(MAP_W * CELL_SIZE, MAP_H * CELL_SIZE), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = 0.04;
+      mesh.renderOrder = 1;
+      this.scene.add(mesh);
+      this.dim = { canvas, tex, mesh, map: this.mapId };
+    }
+    const ctx = this.dim.canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, this.dim.canvas.width, this.dim.canvas.height);
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        const v = mask[y * MAP_W + x];
+        if (!v) continue;
+        ctx.fillStyle = v === 2 ? 'rgba(120,24,24,0.5)' : 'rgba(16,20,32,0.5)';
+        ctx.fillRect(x * 8, y * 8, 8, 8);
+      }
+    }
+    this.dim.tex.needsUpdate = true;
+    this.dim.mesh.visible = true;
+  }
+
+  /** Rings around several selected towers. */
+  setMultiRings(points: THREE.Vector3[]) {
+    while (this.multiRings.length < points.length) {
+      const r = new THREE.Mesh(this.selectRing.geometry, this.selectRing.material);
+      r.rotation.x = -Math.PI / 2;
+      this.scene.add(r);
+      this.multiRings.push(r);
+    }
+    this.multiRings.forEach((r, i) => {
+      r.visible = i < points.length;
+      if (i < points.length) r.position.copy(points[i]).setY(0.1);
+    });
+  }
+
   /** Semi-transparent preview of the tower that is about to be placed. Rebuilt only when the tower type changes. */
   showGhost(def: TowerDef, owner: number, cx: number, cy: number, ok: boolean) {
     if (this.ghost?.id !== def.id) {
@@ -279,12 +326,14 @@ export class World {
     }
     if (water.length) root.add(mergeWorldObjects(water));
 
-    // Forest on the plateau.
+    // Forest on the whole plateau, all the way to its edge.
     const deco: THREE.Object3D[] = [];
-    for (let i = 0; i < 520; i++) {
-      let x = (rand() - 0.5) * (W + 90), z = (rand() - 0.5) * (H + 90);
+    const outerW = W + 2 * P, outerH = H + 2 * P;
+    const treeCount = Math.min(4200, Math.round((outerW * outerH - W * H) * 0.0085));
+    for (let i = 0; i < treeCount; i++) {
+      let x = (rand() - 0.5) * (outerW - 4), z = (rand() - 0.5) * (outerH - 4);
       if (Math.abs(x) < W / 2 + 2 && Math.abs(z) < H / 2 + 2) {
-        if (rand() < 0.5) x = Math.sign(x || 1) * (W / 2 + 3 + rand() * 40); else z = Math.sign(z || 1) * (H / 2 + 3 + rand() * 40);
+        if (rand() < 0.5) x = Math.sign(x || 1) * (W / 2 + 3 + rand() * (P - 8)); else z = Math.sign(z || 1) * (H / 2 + 3 + rand() * (P - 8));
       }
       const obj = rand() < 0.88 ? createTree(rand) : createRock(rand);
       obj.position.set(x, CLIFF, z);

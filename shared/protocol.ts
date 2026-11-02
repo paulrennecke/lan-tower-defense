@@ -43,6 +43,7 @@ export interface PlayerStats {
   lumber: number;
   kills: number;
   damage: number;
+  goldEarned: number;
   ready: boolean;
   research: Record<string, number>;
 }

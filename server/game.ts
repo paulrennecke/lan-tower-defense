@@ -356,6 +356,12 @@ export class Game {
       this.timer = WAVE_COUNTDOWN;
     }
     const active = [...this.players.values()].filter((p) => p.connected);
+    // Before the first wave nobody is rushed: it starts as soon as every connected player is ready.
+    if (this.wave === 0) {
+      this.timer = FIRST_COUNTDOWN;
+      if (active.length > 0 && active.every((p) => p.ready)) this.startWave();
+      return;
+    }
     if (active.length > 0 && active.every((p) => p.ready) && this.timer > 3) this.timer = 3;
     this.timer -= dt;
     if (this.timer <= 0) this.startWave();
@@ -382,6 +388,7 @@ export class Game {
     for (const p of this.players.values()) {
       p.ready = false;
       p.gold += income + this.playerIncomeBonus(p.id);
+      p.goldEarned += income + this.playerIncomeBonus(p.id);
       p.lumber += lumber;
     }
     const names = [...new Set(def.groups.map((g) => ENEMY_BY_ID[g.enemy].name))].join(' + ');
@@ -747,7 +754,7 @@ export class Game {
 
   playerStats(): PlayerStats[] {
     return [...this.players.values()].map((p) => ({
-      id: p.id, gold: Math.floor(p.gold), lumber: p.lumber, kills: p.kills, damage: Math.round(p.damage),
+      id: p.id, gold: Math.floor(p.gold), lumber: p.lumber, kills: p.kills, damage: Math.round(p.damage), goldEarned: Math.round(p.goldEarned),
       ready: p.ready, research: p.research,
     }));
   }

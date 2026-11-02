@@ -135,17 +135,26 @@ describe('Game commands', () => {
     expect(p.lumber).toBe(10 - 3 - 3);
   });
 
-  it('ready vote shortens the countdown', () => {
+  it('the first wave waits until every player is ready, later waves use the countdown', () => {
     const g = mkGame(['human', 'orc']);
-    expect(g.timer).toBe(FIRST_COUNTDOWN);
+    run(g, 60);
+    expect(g.wave).toBe(0);
+    g.setReady('p0', true);
+    run(g, 5);
+    expect(g.wave).toBe(0);
+    g.setReady('p1', true);
+    run(g, 0.2);
+    expect(g.wave).toBe(1);
+    // Later waves: ready vote shortens the countdown.
+    g.enemies.length = 0; (g as any).spawnQueue.length = 0;
+    g.tick(0.05);
+    expect(g.timer).toBeGreaterThan(10);
     g.setReady('p0', true);
     g.tick(0.05);
     expect(g.timer).toBeGreaterThan(10);
     g.setReady('p1', true);
     g.tick(0.05);
     expect(g.timer).toBeLessThanOrEqual(3);
-    run(g, 3.1);
-    expect(g.wave).toBe(1);
     // Disconnected players do not block the vote.
     g.setConnected('p1', false);
   });

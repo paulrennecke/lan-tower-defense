@@ -1,8 +1,8 @@
 import { ARMOR_NAMES } from '../../../shared/damage';
 import { CLASSES, CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/classes';
 import { MAPS } from '../../../shared/maps';
-import { ENEMY_BY_ID } from '../../../shared/data/enemies';
-import { VICTORY_WAVE, getWave } from '../../../shared/data/waves';
+import { ENEMIES, ENEMY_BY_ID } from '../../../shared/data/enemies';
+import { START_GOLD, START_LIVES, START_LUMBER, VICTORY_WAVE, WAVE_COUNTDOWN, getWave, waveBounty, waveIncome, waveLumber } from '../../../shared/data/waves';
 import {
   GATE, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, cellIndex, setActiveMap, computeFlow, isBuildable, routeLength,
   spawnsConnected, traceRoute,
@@ -18,7 +18,7 @@ import { sfx } from '../sfx';
 import { CLASS_ICONS, ENEMY_ICONS, TOWER_ICONS, enemyTags, esc, fmt, hex, statLines, towerTooltip } from './format';
 
 type CPlayer = LobbyPlayer & PlayerStats;
-type Selection = { kind: 'tower' | 'enemy'; id: number } | null;
+type Selection = { kind: 'tower' | 'enemy' | 'multi'; id: number } | null;
 const SELL_REFUND = 0.75;
 
 export class GameView {
@@ -39,8 +39,10 @@ export class GameView {
   private highscore = 0;
   private buildDef: TowerDef | null = null;
   private selected: Selection = null;
-  /** Keyboard selection mode: arrows move a cursor, Enter/Space selects the tower below it. */
-  private cursorMode = false;
+  /** Several towers chosen with a selection box (empty unless selected.kind === 'multi'). */
+  private multi: number[] = [];
+  private boxDrag: { x: number; y: number; add: boolean; moved: boolean } | null = null;
+  private dimKey = '';
   private hover: { cx: number; cy: number; x: number; y: number } | null = null;
   private pings: { x: number; y: number; color: number; until: number }[] = [];
   private active = false;
@@ -71,19 +73,20 @@ export class GameView {
     hud.id = 'hud';
     hud.innerHTML = `
       <div class="topbar panel">
-        <div class="stat" title="Welle">⚔ <b class="h-wave">0</b></div>
+        <div class="stat s-wave" title="Welle">⚔ <b class="h-wave">0</b></div>
         <div class="stat timer h-timer"></div>
         <button class="h-ready" title="Bereit für die nächste Welle (N)">Bereit <kbd>N</kbd></button>
-        <div class="stat" title="Gemeinsame Leben">❤ <b class="h-lives">0</b></div>
-        <div class="stat" title="Dein Gold">💰 <b class="h-gold gold">0</b></div>
-        <div class="stat" title="Dein Holz">🌲 <b class="h-lumber">0</b></div>
-        <div class="stat muted" title="Rekord">🏆 <span class="h-hs">0</span></div>
+        <div class="stat s-lives" title="Gemeinsame Leben">❤ <b class="h-lives">0</b></div>
+        <div class="stat s-gold" title="Dein Gold">💰 <b class="h-gold gold">0</b></div>
+        <div class="stat s-lumber" title="Dein Holz">🌲 <b class="h-lumber">0</b></div>
+        <div class="stat s-hs muted" title="Rekord">🏆 <span class="h-hs">0</span></div>
       </div>
-      <div class="wave-preview panel"></div>
+      <div class="left-col"><div class="wave-preview panel"></div><div class="players-panel panel"></div></div>
+      <div class="box-select hidden"></div>
       <div class="build-panel panel">
         <h3 class="h-class"></h3>
         <div class="build-grid"></div>
-        <div class="build-hint muted"><div class="hint-row"><span>Auswahl-Cursor</span><span class="hint-keys"><kbd>X</kbd></span></div><div class="hint-row"><span>Vorheriger / nächster Turm</span><span class="hint-keys"><kbd>Q</kbd> / <kbd>E</kbd></span></div></div>
+        <div class="build-hint muted"></div>
         <div class="h-maze muted" style="margin-top:6px;font-size:12px" title="Länge des Gegnerwegs je Spur – baut Labyrinthe, um ihn zu verlängern!"></div>
         <button class="h-research" style="width:100%;margin-top:8px">📜 Forschung <kbd>F</kbd></button>
         <div class="h-spectator hidden" style="margin-top:6px">
@@ -105,6 +108,7 @@ export class GameView {
           <button class="h-route">🧭 Laufweg: an <kbd>R</kbd></button>
           <button class="h-zones">🔲 Bauraster: an <kbd>G</kbd></button>
           <button class="h-gift">💸 Gold senden <kbd>T</kbd></button>
+          <button class="h-rules">📖 Spielregeln <kbd>F1</kbd></button>
           <button class="h-sound">🔊 Ton: an <kbd>M</kbd></button>
           <button class="h-quit hidden">🚪 Spiel beenden <kbd>Shift+Q</kbd></button>
         </div>
@@ -116,6 +120,7 @@ export class GameView {
         <button class="primary p-resume">▶ Fortsetzen <kbd>P</kbd></button>
       </div>
       <div class="tooltip panel hidden"></div>
+      <div class="overlay hidden o-rules"><div class="panel rules"></div></div>
       <div class="overlay hidden o-research"><div class="panel"></div></div>
       <div class="overlay hidden o-score"><div class="panel scoreboard"></div></div>
       <div class="overlay hidden o-over"><div class="panel"></div></div>
@@ -127,15 +132,15 @@ export class GameView {
           <button class="q-cancel">Abbrechen</button><button class="q-nosave">Nicht speichern</button><button class="primary q-save">Speichern &amp; beenden</button>
         </div>
       </div></div>
-      <div class="overlay hidden o-gift"><div class="panel" style="min-width:380px">
-        <h2 style="margin-top:0">💸 Gold senden</h2>
-        <select class="g-to" style="width:100%"></select>
-        <div class="row" style="margin-top:8px;gap:6px">
-          <input type="number" class="g-amount" min="1" value="100" style="flex:1">
-          <button data-add="50">50</button><button data-add="100">100</button><button data-add="250">250</button><button data-add="all">Alles</button>
+      <div class="overlay hidden o-gift"><div class="panel gift-box" style="min-width:380px">
+        <h2 style="margin:0">💸 Gold senden</h2>
+        <div><label>Empfänger</label><select class="g-to" style="width:100%"></select></div>
+        <div><label>Betrag</label>
+          <input type="number" class="g-amount" min="1" value="100" style="width:100%">
+          <div class="amounts" style="margin-top:6px"><button data-add="50">50</button><button data-add="100">100</button><button data-add="250">250</button><button data-add="all">Alles</button></div>
         </div>
-        <div class="muted" style="margin-top:4px">Dein Gold: <b class="gold g-have"></b></div>
-        <div class="row" style="margin-top:10px;justify-content:flex-end;gap:6px"><button class="g-cancel">Abbrechen</button><button class="primary g-send">Senden</button></div>
+        <div class="have"><span class="muted">Dein Gold</span><b class="gold g-have"></b></div>
+        <div class="row" style="justify-content:flex-end;gap:6px"><button class="g-cancel">Abbrechen</button><button class="primary g-send">Senden</button></div>
       </div></div>
       <div class="overlay hidden o-save"><div class="panel" style="min-width:420px">
         <h2 style="margin-top:0">💾 Spiel speichern</h2>
@@ -152,6 +157,7 @@ export class GameView {
     // Every menu entry closes the menu after its action.
     this.q('.h-menu').onclick = () => this.toggleMenu();
     this.q('.h-gift').onclick = () => this.openGift();
+    this.q('.h-rules').onclick = () => this.toggleRules();
     this.q('.g-cancel').onclick = () => this.q('.o-gift').classList.add('hidden');
     this.q('.g-send').onclick = () => this.sendGift();
     this.q('.o-gift').querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) => {
@@ -216,6 +222,7 @@ export class GameView {
     const mm = this.q<HTMLCanvasElement>('.minimap canvas');
     mm.height = Math.round((230 * MAP_H) / MAP_W);
     mm.style.height = mm.height + 'px';
+    this.el.style.setProperty('--mm-h', mm.height + 16 + 'px');
     this.you = state.you;
     this.hostId = hostId;
     this.players = new Map(state.players.map((p) => [p.id, p]));
@@ -226,7 +233,11 @@ export class GameView {
     this.over = false;
     this.setPaused(null);
     this.selected = null;
+    this.multi = [];
     this.buildDef = null;
+    this.dimKey = '';
+    this.world.setDim(null);
+    this.world.setMultiRings([]);
     this.world.hideGhost();
     this.ent.clear();
     for (const t of state.towers) this.ent.setTower(t);
@@ -278,12 +289,14 @@ export class GameView {
         this.ent.setTower(msg.tower);
         if (!prev) this.refreshRoutes();
         if (this.selected?.kind === 'tower' && this.selected.id === msg.tower.id) this.renderSelection();
+        else if (this.selected?.kind === 'multi' && this.multi.includes(msg.tower.id)) this.renderSelection();
         break;
       }
       case 'towerGone':
         this.ent.removeTower(msg.id);
         this.refreshRoutes();
         if (this.selected?.kind === 'tower' && this.selected.id === msg.id) this.select(null);
+        else if (this.selected?.kind === 'multi' && this.multi.includes(msg.id)) { this.multi = this.multi.filter((i) => i !== msg.id); this.renderSelection(); }
         break;
       case 'joined': this.players.set(msg.player.id, msg.player); break;
       case 'chat': this.chatLine(msg.from ? `<b style="color:${hex(msg.color)}">${esc(msg.name)}:</b> ${esc(msg.text)}` : `<span class="gold">${esc(msg.text)}</span>`); break;
@@ -385,15 +398,23 @@ export class GameView {
     });
   }
 
+  private hintKey = '';
   private updateBuildButtons() {
-    // While a tower is being placed the arrow keys move the build cursor instead of the camera.
-    this.world.arrowKeysMoveCamera = !this.buildDef && !this.cursorMode;
-    const rows: [string, string][] = this.buildDef
-      ? [['←↑↓→', 'Cursor bewegen'], ['⇧ + ←↑↓→', '5 Felder weit'], ['Enter / Leertaste', 'Turm bauen'], ['Esc', 'Beenden']]
-      : this.cursorMode
-        ? [['←↑↓→', 'Turm unter dem Cursor öffnen'], ['⇧ + ←↑↓→', '5 Felder weit'], ['U', 'Aufwerten'], ['V', 'Verkaufen'], ['C', 'Zielmodus wechseln'], ['Esc', 'Beenden']]
-        : [['X', 'Auswahl-Cursor'], ['Q / E', 'Vorheriger / nächster Turm']];
-    this.q('.build-hint').innerHTML = rows.map(([k, t]) => `<div class="hint-row"><span>${t}</span><span class="hint-keys">${k.split(' ').map((p) => (p === '+' || p === '/') ? p : `<kbd>${p}</kbd>`).join(' ')}</span></div>`).join('');
+    // The arrow keys always move the cursor; WASD and the mouse move the camera.
+    this.world.arrowKeysMoveCamera = false;
+    const mode = this.buildDef ? 'build' : this.selected?.kind === 'multi' ? 'multi' : this.selected?.kind === 'tower' ? 'tower' : 'idle';
+    if (mode !== this.hintKey) {
+      this.hintKey = mode;
+      const move: [string, string][] = [['←↑↓→', 'Cursor bewegen'], ['⇧ + ←↑↓→', '5 Felder weit']];
+      const rows: [string, string][] = mode === 'build'
+        ? [...move, ['Enter / Leertaste', 'Turm bauen'], ['Esc', 'Bau beenden']]
+        : mode === 'multi'
+          ? [...move, ['U', 'Alle aufwerten'], ['C', 'Zielmodus wechseln'], ['Esc', 'Auswahl aufheben']]
+          : mode === 'tower'
+            ? [...move, ['U', 'Aufwerten'], ['V / Entf', 'Verkaufen'], ['C', 'Zielmodus wechseln'], ['Esc', 'Auswahl aufheben']]
+            : [...move, ['Q / E', 'Vorheriger / nächster Turm'], ['Ziehen', 'Mehrere Türme mit der Maus wählen']];
+      this.q('.build-hint').innerHTML = rows.map(([k, t]) => `<div class="hint-row"><span>${t}</span><span class="hint-keys">${k.split(' ').map((p) => (p === '+' || p === '/') ? p : `<kbd>${p}</kbd>`).join(' ')}</span></div>`).join('');
+    }
     const me = this.me;
     if (!me) return;
     this.el.querySelectorAll<HTMLButtonElement>('.build-btn').forEach((b) => {
@@ -411,7 +432,6 @@ export class GameView {
     if (def.requires && !me.research[def.requires]) { this.toast('Erst erforschen!'); sfx.play('error'); return; }
     this.buildDef = this.buildDef?.id === def.id ? null : def;
     if (this.buildDef) {
-      this.cursorMode = false;
       this.select(null);
       if (!this.hover) this.hover = this.world.pickGround(window.innerWidth / 2, window.innerHeight / 2);
     }
@@ -459,15 +479,25 @@ export class GameView {
     if (o.classList.contains('hidden')) return;
     const towerCount = new Map<string, number>();
     for (const t of this.ent.towers.values()) towerCount.set(t.info.owner, (towerCount.get(t.info.owner) ?? 0) + 1);
-    const rows = [...this.players.values()].sort((a, b) => b.damage - a.damage).map((p) => `
+    const rows = [...this.players.values()].sort((a, b) => b.damage - a.damage).map((p) => {
+      const cls = p.classId ? CLASS_BY_ID[p.classId] : undefined;
+      const research = cls ? cls.research.map((r) => {
+        const lvl = p.research[r.id] ?? 0;
+        return `<div class="${lvl >= r.maxLevel ? 'gold' : lvl ? '' : 'muted'}">${esc(r.name)} ${lvl}/${r.maxLevel}</div>`;
+      }).join('') : '';
+      const total = cls ? cls.research.reduce((s, r) => s + r.maxLevel, 0) : 0;
+      const done = cls ? cls.research.reduce((s, r) => s + (p.research[r.id] ?? 0), 0) : 0;
+      return `
       <tr style="opacity:${p.connected ? 1 : 0.5}">
         <td><span class="dot" style="background:${hex(p.color)}"></span>${esc(p.name)}${p.id === this.you ? ' (du)' : ''}</td>
-        <td>${p.classId ? CLASS_ICONS[p.classId] + ' ' + esc(CLASS_BY_ID[p.classId].name) : ''}</td>
-        <td>${towerCount.get(p.id) ?? 0}</td><td>${p.kills}</td><td>${fmt(p.damage)}</td><td class="gold">${fmt(p.gold)}</td><td>${p.lumber}</td>
+        <td>${cls ? CLASS_ICONS[cls.id] + ' ' + esc(cls.name) : ''}</td>
+        <td>${towerCount.get(p.id) ?? 0}</td><td>${p.kills}</td><td>${fmt(p.damage)}</td><td class="gold">${fmt(p.gold)}</td><td class="gold">${fmt(p.goldEarned)}</td><td>${p.lumber}</td>
+        <td><div>${done}/${total}</div><div class="research-prog">${research}</div></td>
         <td>${p.ready ? '✔' : ''}${p.connected ? '' : ' ⚠ getrennt'}</td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
     o.querySelector('.panel')!.innerHTML = `<h2 style="margin-top:0">📊 Punktestand – Welle ${this.wave}</h2>
-      <table><tr><th>Spieler</th><th>Klasse</th><th>Türme</th><th>Kills</th><th>Schaden</th><th>Gold</th><th>Holz</th><th></th></tr>${rows}</table>`;
+      <table><tr><th>Spieler</th><th>Klasse</th><th>Türme</th><th>Kills</th><th>Schaden</th><th>Gold</th><th>Insg. verdient</th><th>Holz</th><th>Forschung</th><th></th></tr>${rows}</table>`;
   }
 
   private toggleReady() {
@@ -487,15 +517,86 @@ export class GameView {
 
   private select(sel: Selection) {
     this.selected = sel;
+    if (sel?.kind !== 'multi') this.multi = [];
     this.renderSelection();
     this.updateHoverVisuals();
+    this.updateBuildButtons();
+  }
+
+  /** Selects the given towers: none clears, one opens the normal panel, several open the group panel. */
+  private selectTowers(ids: number[]) {
+    if (ids.length <= 1) { this.select(ids.length ? { kind: 'tower', id: ids[0] } : null); return; }
+    this.multi = ids;
+    this.select({ kind: 'multi', id: 0 });
+  }
+
+  private multiTowers() {
+    return this.multi.map((id) => this.ent.towers.get(id)).filter((t): t is NonNullable<typeof t> => !!t && this.canUse(t.info));
+  }
+
+  private upgradeInfo(info: TowerInfo) {
+    const def = TOWER_BY_ID[info.def];
+    const max = def.maxLevel ?? 2;
+    return info.level < max ? { gold: def.upCost[info.level], lumber: def.upLumber[info.level] ?? 0 } : null;
+  }
+
+  private upgradeAll() {
+    this.lastUpgradeAt = performance.now();
+    for (const t of this.multiTowers()) if (this.upgradeInfo(t.info)) this.net.send({ t: 'upgrade', id: t.info.id });
+  }
+
+  private nextMode(cur: TargetMode | undefined): TargetMode {
+    const modes = Object.keys(TARGET_MODE_NAMES) as TargetMode[];
+    return modes[(Math.max(0, modes.indexOf(cur ?? modes[modes.length - 1])) + 1) % modes.length];
+  }
+
+  private setModeAll(mode: TargetMode) {
+    for (const t of this.multiTowers()) this.net.send({ t: 'mode', id: t.info.id, mode });
+  }
+
+  private renderMultiSelection(panel: HTMLElement) {
+    const towers = this.multiTowers();
+    if (towers.length < 2) { this.selectTowers(towers.map((t) => t.info.id)); return; }
+    const byDef = new Map<string, number>();
+    let gold = 0, lumber = 0, upgradable = 0, kills = 0, damage = 0;
+    for (const t of towers) {
+      byDef.set(t.info.def, (byDef.get(t.info.def) ?? 0) + 1);
+      const up = this.upgradeInfo(t.info);
+      if (up) { gold += up.gold; lumber += up.lumber; upgradable++; }
+      kills += t.info.kills; damage += t.info.damage;
+    }
+    const shooters = towers.filter((t) => effectiveStats(t.info.def, t.info.level, this.players.get(t.info.owner)?.research ?? {}, { dmg: 0, speed: 0 }).dmg > 0);
+    const modes = new Set(shooters.map((t) => t.info.mode));
+    const cur = modes.size === 1 ? [...modes][0] : null;
+    panel.innerHTML = `
+      <div class="portrait">🗂</div>
+      <div class="info">
+        <h3>${towers.length} Türme ausgewählt</h3>
+        <div class="stats" style="grid-template-columns:1fr">${[...byDef].map(([d, n]) => `<div><span class="muted">${n}×</span> ${esc(TOWER_BY_ID[d].name)}</div>`).join('')}</div>
+        <div class="muted" style="margin-top:4px">Kills: ${kills} · Schaden: ${fmt(damage)}</div>
+      </div>
+      <div class="actions">
+        <button class="primary up" ${upgradable ? '' : 'disabled'}><span>⬆ Alle aufwerten</span><small>${upgradable ? `${upgradable}× · ${gold} 💰${lumber ? ` ${lumber} 🌲` : ''}` : 'Alle auf Max.'}</small><kbd>U</kbd></button>
+        <button class="clear"><span>Auswahl aufheben</span><small>&nbsp;</small><kbd>Esc</kbd></button>
+      </div>
+      ${shooters.length ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${cur === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
+    const upBtn = panel.querySelector<HTMLButtonElement>('.up')!;
+    upBtn.onclick = () => this.upgradeAll();
+    panel.querySelector<HTMLButtonElement>('.clear')!.onclick = () => this.select(null);
+    panel.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => { b.onclick = () => this.setModeAll(b.dataset.mode as TargetMode); });
+    this.world.rangeRing.visible = false;
+    this.world.auraRing.visible = false;
+    this.world.selectRing.visible = false;
+    this.world.setMultiRings(towers.map((t) => t.group.position));
   }
 
   private renderSelection() {
     const panel = this.q('.sel-panel');
     const sel = this.selected;
+    if (sel?.kind !== 'multi') this.world.setMultiRings([]);
     if (!sel) { panel.classList.add('hidden'); this.world.selectRing.visible = false; return; }
     panel.classList.remove('hidden');
+    if (sel.kind === 'multi') { this.renderMultiSelection(panel); return; }
     if (sel.kind === 'tower') {
       const t = this.ent.towers.get(sel.id);
       if (!t) { this.select(null); return; }
@@ -508,7 +609,7 @@ export class GameView {
       const maxLevel = def.maxLevel ?? 2;
       const next = info.level < maxLevel ? def.levels[info.level + 1] : null;
       const upLabel = next
-        ? `<span>⬆ Aufwerten <kbd>U</kbd></span><small>${def.upCost[info.level]} 💰${def.upLumber[info.level] ? ` ${def.upLumber[info.level]} 🌲` : ''}</small>`
+        ? `<span>⬆ Aufwerten</span><small>${def.upCost[info.level]} 💰${def.upLumber[info.level] ? ` ${def.upLumber[info.level]} 🌲` : ''}</small><kbd>U</kbd>`
         : '<span>Max. Stufe</span><small>&nbsp;</small>';
       panel.innerHTML = `
         <div class="portrait" style="border-color:${hex(owner?.color ?? 0xffffff)}">${TOWER_ICONS[def.shape]}</div>
@@ -519,13 +620,13 @@ export class GameView {
         </div>
         ${mine ? `<div class="actions">
           <button class="primary up" ${next ? '' : 'disabled'}>${upLabel}</button>
-          <button class="sell"><span>Verkaufen <kbd>V</kbd></span><small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small></button>
+          <button class="sell"><span>Verkaufen</span><small>+${Math.floor(info.invested * SELL_REFUND)} 💰</small><kbd>Entf</kbd></button>
         </div>` : ''}
         ${mine && eff.dmg > 0 ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${info.mode === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
       const upBtn = panel.querySelector<HTMLButtonElement>('.up');
       upBtn?.addEventListener('click', () => { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: info.id }); });
       if (upBtn && next) {
-        upBtn.onmouseenter = () => this.showTooltip(upBtn, towerTooltip(def, info.level + 1));
+        upBtn.onmouseenter = () => this.showTooltip(upBtn, towerTooltip(def, info.level + 1), panel);
         upBtn.onmouseleave = () => this.hideTooltip();
       }
       // Right after an upgrade the panel is redrawn – ignore clicks on "sell" for a moment so a double click cannot sell the tower.
@@ -581,12 +682,36 @@ export class GameView {
       if (e.button !== 0) return;
       const g = this.world.pickGround(e.clientX, e.clientY);
       if (e.altKey && g) { this.net.send({ t: 'ping', x: g.x, y: g.y }); return; }
+      // The tower type stays selected after building, so several towers can be placed in a row (Esc / right click ends it).
       if (this.buildDef && g) {
         this.net.send({ t: 'build', def: this.buildDef.id, cx: g.cx, cy: g.cy });
-        if (!e.shiftKey) { this.buildDef = null; this.updateBuildButtons(); }
+        this.hover = g;
         this.updateHoverVisuals();
         return;
       }
+      // Without a tower type a click selects, a drag draws a selection box.
+      this.boxDrag = { x: e.clientX, y: e.clientY, add: e.shiftKey, moved: false };
+    });
+    window.addEventListener('mousemove', (e) => {
+      const d = this.boxDrag;
+      if (!d) return;
+      if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 6) d.moved = true;
+      const box = this.q('.box-select');
+      box.classList.toggle('hidden', !d.moved);
+      if (d.moved) {
+        box.style.left = Math.min(d.x, e.clientX) + 'px';
+        box.style.top = Math.min(d.y, e.clientY) + 'px';
+        box.style.width = Math.abs(e.clientX - d.x) + 'px';
+        box.style.height = Math.abs(e.clientY - d.y) + 'px';
+      }
+    });
+    window.addEventListener('mouseup', (e) => {
+      const d = this.boxDrag;
+      this.boxDrag = null;
+      if (!d || e.button !== 0) return;
+      this.q('.box-select').classList.add('hidden');
+      if (d.moved) { this.boxSelect(d.x, d.y, e.clientX, e.clientY, d.add); return; }
+      const g = this.world.pickGround(e.clientX, e.clientY);
       const obj = this.world.pickObjects(e.clientX, e.clientY, this.ent.pickables());
       const id = obj?.userData.pickId as string | undefined;
       if (id) this.select({ kind: id[0] === 't' ? 'tower' : 'enemy', id: Number(id.slice(1)) });
@@ -621,20 +746,20 @@ export class GameView {
       if (key.length === 1 && 'rgtmq'.includes(key)) e.preventDefault();
       // Place towers with the keyboard: arrows move the cursor, Enter or Space builds. The tower type and the cursor position
       // stay selected, so several towers can be placed in a row; Esc ends the build mode.
-      if ((this.buildDef || this.cursorMode) && e.key.startsWith('Arrow')) {
+      // Arrow keys always move the cursor (the tower below it is opened right away, or the ghost of the tower to build).
+      if (e.key.startsWith('Arrow')) {
         e.preventDefault();
         const n = e.shiftKey ? 5 : 1;
         this.moveCursor(e.key === 'ArrowLeft' ? -n : e.key === 'ArrowRight' ? n : 0, e.key === 'ArrowUp' ? -n : e.key === 'ArrowDown' ? n : 0);
         return;
       }
       if ((e.key === 'Enter' || e.key === ' ') && this.buildDef && this.hover) { e.preventDefault(); this.placeAtCursor(true); return; }
-      if ((e.key === 'Enter' || e.key === ' ') && this.cursorMode && this.hover) { e.preventDefault(); this.selectAtCursor(); return; }
       if (e.key === 'b' || e.key === 'B') { e.preventDefault(); if (!e.repeat) this.toggleScore(true); return; }
       if (e.key === 'Enter') { e.preventDefault(); this.openChat(); return; }
       if (e.key === 'Escape') {
         this.el.querySelectorAll('.overlay:not(.o-over)').forEach((o) => o.classList.add('hidden'));
         this.toggleMenu(false);
-        this.buildDef = null; this.cursorMode = false; this.select(null); this.updateBuildButtons(); this.updateHoverVisuals(); return;
+        this.buildDef = null; this.select(null); this.updateBuildButtons(); this.updateHoverVisuals(); return;
       }
       if (e.key === ' ') { e.preventDefault(); this.focusNext(); return; }
       if (/^[1-9]$/.test(e.key) && !this.q('.o-research').classList.contains('hidden')) {
@@ -648,15 +773,15 @@ export class GameView {
         return;
       }
       const sel = this.selected?.kind === 'tower' ? this.ent.towers.get(this.selected.id) : undefined;
-      if (key === 'u' && sel && this.canUse(sel.info)) { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: sel.info.id }); }
-      else if (key === 'v' && sel && this.canUse(sel.info)) this.net.send({ t: 'sell', id: sel.info.id });
-      else if (key === 'c' && sel && this.canUse(sel.info)) {
-        const modes = Object.keys(TARGET_MODE_NAMES) as TargetMode[];
-        this.net.send({ t: 'mode', id: sel.info.id, mode: modes[(modes.indexOf(sel.info.mode) + 1) % modes.length] });
-      }
-      else if (key === 'x') this.toggleCursorMode();
+      const multi = this.selected?.kind === 'multi';
+      if (key === 'u' && multi) this.upgradeAll();
+      else if (key === 'u' && sel && this.canUse(sel.info)) { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: sel.info.id }); }
+      else if ((key === 'v' || e.key === 'Delete') && sel && this.canUse(sel.info)) this.net.send({ t: 'sell', id: sel.info.id });
+      else if (key === 'c' && multi) this.setModeAll(this.nextMode(this.multiTowers()[0]?.info.mode));
+      else if (key === 'c' && sel && this.canUse(sel.info)) this.net.send({ t: 'mode', id: sel.info.id, mode: this.nextMode(sel.info.mode) });
       else if (key === 'q' && !e.shiftKey) this.cycleTower(-1);
       else if (key === 'e') this.cycleTower(1);
+      else if (e.key === 'F1') { e.preventDefault(); this.toggleRules(); }
       else if (key === 'f') this.toggleResearch();
       else if (key === 'n') this.toggleReady();
       else if (key === 'p') this.togglePause();
@@ -714,26 +839,48 @@ export class GameView {
     const v = toWorld(cx + 0.5, cy + 0.5, 0).project(this.world.camera);
     if (Math.abs(v.x) > 0.8 || Math.abs(v.y) > 0.8) this.world.focus(cx + 0.5, cy + 0.5);
     this.updateHoverVisuals();
-    if (this.cursorMode) this.selectAtCursor();
-  }
-
-  private toggleCursorMode() {
-    if (this.spectator || this.over) return;
-    this.cursorMode = !this.cursorMode;
-    if (this.cursorMode) {
-      this.buildDef = null;
-      const t = this.selected?.kind === 'tower' ? this.ent.towers.get(this.selected.id) : undefined;
-      this.hover = t ? { x: t.info.cx + 0.5, y: t.info.cy + 0.5, cx: t.info.cx, cy: t.info.cy } : this.hover ?? this.world.pickGround(window.innerWidth / 2, window.innerHeight / 2);
-    }
-    this.updateBuildButtons();
-    this.updateHoverVisuals();
+    if (!this.buildDef) this.selectAtCursor();
   }
 
   private selectAtCursor() {
     const h = this.hover;
     if (!h) return;
     const t = [...this.ent.towers.values()].find((x) => x.info.cx === h.cx && x.info.cy === h.cy);
-    this.select(t ? { kind: 'tower', id: t.info.id } : null);
+    if (t) { if (this.selected?.kind !== 'tower' || this.selected.id !== t.info.id) this.select({ kind: 'tower', id: t.info.id }); }
+    else if (this.selected) this.select(null);
+  }
+
+  /** Selection box: every tower you can control whose screen position lies inside the rectangle. */
+  private boxSelect(x1: number, y1: number, x2: number, y2: number, add: boolean) {
+    const l = Math.min(x1, x2), r = Math.max(x1, x2), t = Math.min(y1, y2), b = Math.max(y1, y2);
+    const ids = new Set<number>();
+    if (add && this.selected?.kind === 'tower') ids.add(this.selected.id);
+    if (add && this.selected?.kind === 'multi') this.multi.forEach((id) => ids.add(id));
+    for (const tw of this.ent.towers.values()) {
+      if (!this.canUse(tw.info)) continue;
+      const v = tw.group.position.clone().project(this.world.camera);
+      const px = ((v.x + 1) / 2) * window.innerWidth, py = ((1 - v.y) / 2) * window.innerHeight;
+      if (px >= l && px <= r && py >= t && py <= b) ids.add(tw.info.id);
+    }
+    this.selectTowers([...ids]);
+  }
+
+  /** Greys out every cell where the chosen tower cannot be built right now (rock, paths, towers; red = not enough gold or wood). */
+  private updateDim() {
+    const def = this.buildDef, me = this.me;
+    if (!def || !me) { if (this.dimKey) { this.dimKey = ''; this.world.setDim(null); } return; }
+    const afford = me.gold >= def.cost && me.lumber >= def.lumber;
+    const key = `${def.id}|${afford}|${this.ent.towers.size}`;
+    if (key === this.dimKey) return;
+    this.dimKey = key;
+    const mask = new Uint8Array(MAP_W * MAP_H);
+    for (let y = 0; y < MAP_H; y++) {
+      for (let x = 0; x < MAP_W; x++) {
+        const i = y * MAP_W + x;
+        mask[i] = !isBuildable(x, y) || this.blocked[i] ? 1 : afford ? 0 : 2;
+      }
+    }
+    this.world.setDim(mask);
   }
 
   /** Q / E: select the previous / next tower you can control (sorted by position) and move the camera there. */
@@ -825,6 +972,7 @@ export class GameView {
   private updateHoverVisuals() {
     const w = this.world;
     const h = this.hover;
+    this.updateDim();
     if (this.buildDef && h && this.me) {
       const def = this.buildDef;
       const occupied = [...this.ent.towers.values()].some((t) => t.info.cx === h.cx && t.info.cy === h.cy);
@@ -841,8 +989,8 @@ export class GameView {
       return;
     }
     w.hideGhost();
-    w.hoverMesh.visible = this.cursorMode && !!h;
-    if (this.cursorMode && h) {
+    w.hoverMesh.visible = !!h && h.cx >= 0 && h.cy >= 0 && h.cx < MAP_W && h.cy < MAP_H;
+    if (h) {
       toWorld(h.cx + 0.5, h.cy + 0.5, 0.06, w.hoverMesh.position);
       (w.hoverMesh.material as any).color.setHex(0xffd040);
     }
@@ -851,8 +999,11 @@ export class GameView {
 
   /** First camera position: the player's wish from the lobby, else the first active portal. */
   private focusStart() {
-    if (this.wish) this.world.focus(this.wish.x * MAP_W, this.wish.y * MAP_H);
-    else this.world.focus(SPAWNS[this.lanes[0] ?? 0].x, SPAWNS[this.lanes[0] ?? 0].y + 8);
+    const p = this.wish ? { x: this.wish.x * MAP_W, y: this.wish.y * MAP_H } : { x: SPAWNS[this.lanes[0] ?? 0].x, y: SPAWNS[this.lanes[0] ?? 0].y + 8 };
+    this.world.focus(p.x, p.y);
+    const cx = Math.min(MAP_W - 1, Math.max(0, Math.floor(p.x))), cy = Math.min(MAP_H - 1, Math.max(0, Math.floor(p.y)));
+    this.hover = { x: cx + 0.5, y: cy + 0.5, cx, cy };
+    this.updateHoverVisuals();
   }
 
   /** Space: cycles the camera through the active portals and the gate. */
@@ -897,12 +1048,13 @@ export class GameView {
 
   // ------------------------------------------------------------------ gold gifts
 
-  private openGift() {
+  private openGift(to?: string) {
     if (this.spectator || this.over) return;
     const sel = this.q<HTMLSelectElement>('.g-to');
     const others = [...this.players.values()].filter((p) => p.id !== this.you);
     if (!others.length) { this.toast('Es gibt keine Mitspieler.'); return; }
     sel.innerHTML = others.map((p) => `<option value="${p.id}">${esc(p.name)}${p.connected ? '' : ' (getrennt)'}</option>`).join('');
+    if (to && others.some((p) => p.id === to)) sel.value = to;
     this.q('.g-have').textContent = String(Math.floor(this.me?.gold ?? 0));
     this.q('.o-gift').classList.remove('hidden');
     this.q<HTMLInputElement>('.g-amount').focus();
@@ -924,12 +1076,21 @@ export class GameView {
 
   // ------------------------------------------------------------------ HUD
 
-  private showTooltip(anchor: HTMLElement, html: string) {
+  private showTooltip(anchor: HTMLElement, html: string, besides?: HTMLElement) {
     const tt = this.q('.tooltip');
     tt.innerHTML = html;
     tt.classList.remove('hidden');
     const r = anchor.getBoundingClientRect();
     const w = 300;
+    if (besides) {
+      // Next to a panel (not over it) so the stats stay readable: right of it, bottom aligned; left if there is no room.
+      const pr = besides.getBoundingClientRect();
+      let left = pr.right + 10;
+      if (left + w > window.innerWidth - 5) left = Math.max(5, pr.left - w - 10);
+      tt.style.left = left + 'px';
+      tt.style.top = Math.max(5, Math.min(window.innerHeight - tt.offsetHeight - 10, pr.bottom - tt.offsetHeight)) + 'px';
+      return;
+    }
     let left = r.left - w - 10;
     if (left < 5) left = r.right + 10;
     tt.style.left = left + 'px';
@@ -964,10 +1125,12 @@ export class GameView {
     const connected = [...this.players.values()].filter((p) => p.connected);
     const readyCount = connected.filter((p) => p.ready).length;
     this.q('.h-timer').innerHTML = this.over ? 'Spiel vorbei' : this.paused ? '⏸ <b>Pausiert</b>' : this.timer >= 0
-      ? `Nächste Welle in <b>${Math.ceil(this.timer)}s</b> <span class="ready-list">(${readyCount}/${connected.length} bereit)</span>`
+      ? (this.wave === 0
+        ? `Start, sobald alle bereit sind <span class="ready-list">(${readyCount}/${connected.length})</span>`
+        : `Nächste Welle in <b>${Math.ceil(this.timer)}s</b> <span class="ready-list">(${readyCount}/${connected.length} bereit)</span>`)
       : 'Welle läuft…';
     const readyBtn = this.q<HTMLButtonElement>('.h-ready');
-    readyBtn.classList.toggle('hidden', this.spectator || this.timer < 0 || this.over);
+    readyBtn.classList.toggle('invisible', this.spectator || this.timer < 0 || this.over);
     readyBtn.classList.toggle('active', !!me?.ready);
     readyBtn.innerHTML = me?.ready ? '✔ Bereit' : 'Bereit <kbd>N</kbd>';
     this.q('.h-quit').classList.toggle('hidden', this.hostId !== this.you || !this.active);
@@ -976,10 +1139,81 @@ export class GameView {
     this.q('.h-lumber').textContent = me ? String(me.lumber) : '–';
     this.q('.h-hs').textContent = String(Math.max(this.highscore, this.wave - 1));
     this.updateBuildButtons();
+    this.updateDim();
     this.renderWavePreview();
+    this.renderPlayers();
     this.renderScore();
     this.renderResearchButtonsState();
     if (this.selected?.kind === 'enemy') this.renderEnemySelection();
+  }
+
+  private plKey = '';
+  /** Compact player list on the left (rows are updated in place so clicks on the gift buttons are never lost). */
+  private renderPlayers() {
+    const box = this.q('.players-panel');
+    const list = [...this.players.values()];
+    const key = list.map((p) => `${p.id}|${p.name}|${p.connected}|${p.classId}`).join(';') + this.spectator;
+    if (key !== this.plKey) {
+      this.plKey = key;
+      box.innerHTML = `<h4>👥 Spieler</h4>
+        <div class="pl-row muted"><span>Name</span><span class="pv">Schaden</span><span class="pv">Verdient</span><span></span></div>
+        ${list.map((p) => `<div class="pl-row ${p.connected ? '' : 'off'}" data-pid="${p.id}">
+          <span class="pn" title="${esc(p.name)}${p.connected ? '' : ' (getrennt)'}"><span class="dot" style="background:${hex(p.color)}"></span>${esc(p.name)}${p.id === this.you ? ' <span class="muted">(du)</span>' : ''} <span class="muted">${CLASS_ICONS[p.classId ?? ''] ?? ''}</span></span>
+          <span class="pv pd"></span><span class="pv pg gold"></span>
+          ${p.id === this.you || this.spectator ? '<span></span>' : `<button class="gift" data-gift="${p.id}" title="Gold senden">💸</button>`}
+        </div>`).join('')}`;
+      box.querySelectorAll<HTMLButtonElement>('[data-gift]').forEach((b) => { b.onclick = () => this.openGift(b.dataset.gift); });
+    }
+    for (const p of list) {
+      const row = box.querySelector(`[data-pid="${p.id}"]`);
+      if (!row) continue;
+      row.querySelector('.pd')!.textContent = fmt(p.damage);
+      row.querySelector('.pg')!.textContent = fmt(p.goldEarned);
+    }
+  }
+
+  private toggleRules(show?: boolean) {
+    const o = this.q('.o-rules');
+    const v = show ?? o.classList.contains('hidden');
+    o.classList.toggle('hidden', !v);
+    if (v) this.renderRules();
+  }
+
+  private renderRules() {
+    const bounty = [1, 5, 10, 20, 30, 40].map((n) => `<tr><td>Welle ${n}</td><td class="num">${waveIncome(n)} 💰</td><td class="num">${waveBounty(n)} 💰</td><td class="num">${waveLumber(n)} 🌲</td></tr>`).join('');
+    const enemies = ENEMIES.map((d) => `<tr><td>${esc(d.name)}${d.boss ? ' 👑' : ''}</td><td class="num">${d.lives}</td><td class="num">${d.bounty}×</td><td>${[d.flying ? 'fliegt' : '', d.invisible ? 'unsichtbar' : '', d.immune ? 'magieimmun' : '', d.regen ? 'regeneriert' : '', d.heal ? 'heilt andere' : '', d.split ? 'teilt sich' : ''].filter(Boolean).join(', ') || '–'}</td></tr>`).join('');
+    this.q('.o-rules .panel').innerHTML = `
+      <h2 style="margin-top:0">📖 Spielregeln</h2>
+      <h3>Ziel</h3>
+      <p>Alle Spieler verteidigen gemeinsam ein Tor gegen immer stärkere Wellen. Überstehst du Welle <b>${VICTORY_WAVE}</b>, ist das Spiel gewonnen und der <b>Endlos-Modus</b> beginnt – dort zählt nur noch, wie weit ihr kommt. Pro Karte wird die beste erreichte Welle als Rekord gespeichert. Fällt das gemeinsame Leben auf 0, ist das Spiel verloren.</p>
+      <h3>So läuft eine Runde</h3>
+      <ul>
+        <li>Gegner starten an den <b>Portalen</b> (je nach Spielerzahl sind mehrere Spuren aktiv) und laufen zum <b>Tor</b>. Jeder durchgekommene Gegner kostet gemeinsame Leben.</li>
+        <li>Alle Spieler bauen mit ihrer <b>Klasse</b> Türme – überall auf der Karte, wo gebaut werden darf. Die Türme einer Klasse unterscheiden sich in Reichweite, Schaden, Angriffstyp und Spezialfähigkeiten.</li>
+        <li><b>Labyrinth:</b> Gegner laufen immer den kürzesten freien Weg um eure Türme herum. Baut Mauern und Türme so, dass der Weg möglichst lang wird. Den Weg komplett zu versperren ist nicht erlaubt. Flieger ignorieren Türme, müssen aber um Felsen herum.</li>
+        <li><b>Welle 1</b> startet erst, wenn alle Spieler auf „Bereit“ gedrückt haben. Danach beginnt der Countdown zur nächsten Welle (${WAVE_COUNTDOWN} s) erst, wenn der letzte Gegner der Welle besiegt ist; sind alle bereit, geht es nach 3 s los.</li>
+        <li>Türme lassen sich bis <b>Stufe 3</b> aufwerten. Mit <b>Forschung</b> (Gold und Holz) verbessert ihr alle Türme der Klasse und schaltet den stärksten Turm frei.</li>
+        <li>Gold lässt sich an Mitspieler <b>verschenken</b>. Wer die Verbindung verliert, dessen Türme gehören allen gemeinsam. Neue Spieler können später einsteigen.</li>
+      </ul>
+      <h3>Steuerung</h3>
+      <ul>
+        <li><b>Bauen:</b> Taste <kbd>1</kbd>–<kbd>7</kbd> oder Button, Maus oder Pfeiltasten bewegen den Cursor, Klick / <kbd>Enter</kbd> / <kbd>Leertaste</kbd> baut. Der Turmtyp bleibt gewählt, <kbd>Esc</kbd> beendet das Bauen.</li>
+        <li><b>Auswählen:</b> Klick, Pfeiltasten (Turm unter dem Cursor), <kbd>Q</kbd>/<kbd>E</kbd> oder mit der Maus einen Auswahlrahmen aufziehen. Dann <kbd>U</kbd> aufwerten, <kbd>V</kbd>/<kbd>Entf</kbd> verkaufen, <kbd>C</kbd> Zielmodus wechseln.</li>
+        <li><b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, Bildschirmrand, rechte Maustaste ziehen, Mausrad zoomt, <kbd>Leertaste</kbd> springt zu Portalen und Tor.</li>
+      </ul>
+      <h3>Gold, Holz und Leben – genaue Zahlen</h3>
+      <ul>
+        <li><b>Start:</b> ${START_GOLD} Gold, ${START_LUMBER} Holz pro Spieler; ${START_LIVES} gemeinsame Leben (+10 für jede weitere aktive Spur).</li>
+        <li><b>Wellengeld:</b> Zu Beginn jeder Welle bekommt <u>jeder</u> Spieler <b>25 + 5 × Wellennummer</b> Gold (Forschung „Investitionen“ gibt zusätzlich +15 je Stufe) und <b>1 Holz</b> (Boss-Wellen: 2).</li>
+        <li><b>Kopfgeld:</b> Für jeden besiegten Gegner bekommen <u>alle</u> Spieler Gold – unabhängig davon, wer ihn erledigt hat. Es beträgt <b>(2 + ⌊Welle ÷ 3⌋) × Faktor des Gegners</b> (gerundet, mindestens 1), geteilt durch die Zahl der aktiven Spuren (jede Spur schickt die ganze Welle). Der Spieler, dessen Turm den Gegner besiegt, erhält zusätzlich den Bonus der Forschung „Plündern“ (+1 Gold je Stufe).</li>
+        <li><b>Bosse:</b> Wird ein Boss besiegt, bekommen alle Spieler +2 Holz.</li>
+        <li><b>Verkaufen:</b> Du erhältst <b>75 %</b> des insgesamt in den Turm investierten Golds (Bau + Aufwertungen) zurück.</li>
+        <li><b>Leben:</b> Ein durchgekommener Gegner kostet so viele Leben, wie in der Tabelle unten steht.</li>
+      </ul>
+      <table><tr><th>Zeitpunkt</th><th class="num">Wellengeld pro Spieler</th><th class="num">Kopfgeld (Faktor 1×)</th><th class="num">Holz</th></tr>${bounty}</table>
+      <table><tr><th>Gegner</th><th class="num">Leben bei Durchbruch</th><th class="num">Kopfgeld-Faktor</th><th>Besonderheiten</th></tr>${enemies}</table>
+      <div style="text-align:right;margin-top:10px"><button class="close">Schließen <kbd>Esc</kbd></button></div>`;
+    this.q('.o-rules .close').onclick = () => this.toggleRules(false);
   }
 
   private lastResearchKey = '';
@@ -1084,7 +1318,7 @@ export class GameView {
     const dt = Math.min(0.1, (now - this.clock) / 1000);
     this.clock = now;
     if (!this.active) return;
-    if (this.timer > 0 && !this.paused) this.timer = Math.max(0, this.timer - dt);
+    if (this.timer > 0 && !this.paused && this.wave > 0) this.timer = Math.max(0, this.timer - dt);
     this.ent.update(dt, now / 1000);
     if (this.selected?.kind === 'enemy') {
       const e = this.ent.enemies.get(this.selected.id);
