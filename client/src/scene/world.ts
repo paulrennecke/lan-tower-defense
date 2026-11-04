@@ -346,8 +346,7 @@ export class World {
     // One spawn portal per lane.
     for (const sp of SPAWNS) {
       const portal = createPortal();
-      toWorld(sp.x, sp.y - 0.6, 0, portal.position);
-      portal.rotation.y = Math.PI / 2;
+      toWorld(sp.x, sp.y - 0.3, 0, portal.position);
       portal.userData.staticWorld = true;
       root.add(portal);
       this.animated.push(portal);

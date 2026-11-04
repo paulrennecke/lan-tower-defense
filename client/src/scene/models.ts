@@ -616,11 +616,11 @@ export function createIceCliff(rand: () => number): THREE.Group {
 
 export function createPortal(): THREE.Group {
   const g = new THREE.Group();
-  g.add(P('torus', mat(0x9b30ff, { glow: 1.5 }), [1.4, 1.4, 1.4], [0, 1.5, 0], [0, Math.PI / 2, 0], false));
-  const inner = P('sph', mat(0x6020c0, { glow: 1.0, opacity: 0.6 }), [0.1, 1.3, 1.3], [0, 1.5, 0], [0, 0, 0], false);
+  g.add(P('torus', mat(0x9b30ff, { glow: 1.5 }), [1.4, 1.4, 1.4], [0, 1.5, 0], [0, 0, 0], false));
+  const inner = P('sph', mat(0x6020c0, { glow: 1.0, opacity: 0.6 }), [1.3, 1.3, 0.1], [0, 1.5, 0], [0, 0, 0], false);
   g.add(inner);
-  for (const z of [-1.6, 1.6]) g.add(P('box', mat(0x333040), [0.4, 3, 0.4], [0, 1.5, z]));
-  g.userData.anim = (t: number) => { inner.rotation.x = t; inner.scale.y = 1.3 + Math.sin(t * 3) * 0.1; };
+  for (const x of [-1.6, 1.6]) g.add(P('box', mat(0x333040), [0.4, 3, 0.4], [x, 1.5, 0]));
+  g.userData.anim = (t: number) => { inner.rotation.z = t; inner.scale.y = 1.3 + Math.sin(t * 3) * 0.1; };
   return g;
 }
 
