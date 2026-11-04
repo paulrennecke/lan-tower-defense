@@ -9,11 +9,11 @@ export class Net {
   connected = false;
   private stopped = false;
 
-  constructor(private getHello: () => ClientMsg) {}
+  constructor(private getHello: () => ClientMsg, private room: string | null = null) {}
 
   connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const ws = new WebSocket(`${proto}://${location.host}/ws${this.room ? `?room=${encodeURIComponent(this.room)}` : ''}`);
     this.ws = ws;
     ws.onopen = () => {
       this.connected = true;

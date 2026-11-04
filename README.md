@@ -5,7 +5,8 @@ Warcraft-III-Karte **Wintermaul TD** („LAN TD“): verschneite Karte, Gegner a
 und kein fester Weg, sondern **Labyrinthe (Mazes)**, die die Spieler selbst bauen.
 
 Ein Rechner startet den Server, alle anderen öffnen einfach die angezeigte Adresse im Browser – keine Installation
-auf den Mitspieler-Rechnern nötig.
+auf den Mitspieler-Rechnern nötig. Alternativ spielt man ohne eigenen Server **online** auf
+[td.rennecke.org](https://td.rennecke.org) (siehe [Online-Modus](#online-modus-tdrenneckeorg)).
 
 ## Schnellstart (Host)
 
@@ -140,7 +141,8 @@ beim Verkaufen direkt nach dem Aufwerten wird ein versehentlicher Doppelklick ig
 - **Pause:** Jeder Spieler kann das Spiel mit **P** oder ⏸ anhalten und fortsetzen. Während der Pause stehen
   Gegner und Countdown still; Bauen, Aufwerten, Verkaufen und Forschung sind gesperrt.
 - **Speichern:** Mit 💾 jederzeit während des Spiels. Die Spielstände liegen auf dem Server-Rechner im Ordner
-  `saves/` (gleicher Name überschreibt den alten Spielstand).
+  `saves/` (gleicher Name überschreibt den alten Spielstand). Online gehören Spielstände dem **Browser**, in dem
+  gespeichert wurde (Schlüssel im localStorage) – jeder sieht in der Lobby nur seine eigenen.
 - **Laden:** Der Host 👑 lädt einen Spielstand (inkl. Karte) in der Lobby (Liste „💾 Spielstände“). Spieler übernehmen den
   Platz mit **gleichem Namen**, die übrigen Plätze werden der Reihe nach vergeben. Klassen kommen aus dem Spielstand.
   Unbesetzte Plätze übernehmen später beitretende Spieler automatisch. Ein geladenes Spiel startet pausiert.
@@ -179,7 +181,7 @@ tests/    Vitest (Regeln, Simulation, Server-Protokoll)
 
 ```bash
 npm run dev:server       # Server mit Auto-Reload (Port 3000)
-npm run dev:client       # Vite-Dev-Server mit Hot-Reload (leitet /ws an Port 3000 weiter)
+npm run dev:client       # Vite-Dev-Server mit Hot-Reload (leitet /ws und /api an Port 3000 weiter)
 npm test                 # Unit- und Integrationstests
 npm run typecheck        # TypeScript prüfen
 npm run bots -- 15 --start     # 15 Bot-Spieler verbinden sich (Lasttest / Lobby füllen)
@@ -188,3 +190,49 @@ npm run balance -- 4 45        # Headless-Balancing: 4 Bot-Spieler bis Welle 45
 
 Optionale Browser-Tests (benötigen `playwright-core` und Edge):
 `npx tsx tools/e2e.ts <pfad-zu-playwright-core>` und `npx tsx tools/spectate.ts <pfad-zu-playwright-core>`.
+
+## Online-Modus (td.rennecke.org)
+
+Derselbe Server läuft mit `TD_MODE=online` als öffentlicher Server mit **beliebig vielen Räumen**:
+
+- Startseite mit **offenen Räumen**, „Raum erstellen“ (öffentlich oder privat) und „Mit Code beitreten“.
+- Jeder Raum hat einen 4-stelligen Code und einen Einladungslink, z. B. `https://td.rennecke.org/#K7QD`
+  (in der Lobby unter „Mitspieler einladen“ → 🔗 Link kopieren).
+- Räume ohne verbundene Spieler werden nach 10 Minuten gelöscht. Rekorde gelten serverweit pro Karte.
+- Auf der Startseite gibt es außerdem den **Download für die lokale LAN-Runde** (`/download/lan-td.zip`, enthält den
+  fertig gebauten Client; Start mit `Start-Server.cmd` bzw. `./start-server.sh`).
+
+Lokal ausprobieren: `npm run build`, dann `TD_MODE=online npm run server` (PowerShell: `$env:TD_MODE='online'; npm run server`).
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `TD_MODE` | `lan` | `online` = Räume mit Codes |
+| `PORT` | `3000` | HTTP/WebSocket-Port |
+| `DATA_DIR` | Projektordner | Ablage für `highscore.json` und `saves/` |
+| `SAVE_DIR` | `$DATA_DIR/saves` | Spielstände |
+| `TD_ORIGIN` | – | erlaubte Origins (kommagetrennt), z. B. `https://td.rennecke.org` |
+| `MAX_ROOMS` / `ROOM_TTL_MIN` | `100` / `10` | max. Räume / Minuten bis ein leerer Raum gelöscht wird |
+| `MAX_CONN_PER_IP` / `MAX_ROOMS_PER_IP` | `20` / `10` | Verbindungen je IP / neue Räume je IP in 10 Min. |
+| `MSG_RATE` / `MAX_SAVES` | `60` / `20` | Nachrichten pro Sekunde und Verbindung / Spielstände pro Browser |
+
+### Deployment auf Uberspace
+
+Jeder Push auf `main` startet [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): Typecheck + Tests, Build,
+LAN-Paket bauen, Code per `rsync` nach `~/lan-td` kopieren, `npm ci --omit=dev`, supervisord-Dienst `lan-td`
+(Port 61235) neu starten und `uberspace web backend` für die Domain setzen. Spielstände und Rekorde liegen in
+`~/lan-td-data` und bleiben bei Deployments erhalten.
+
+Einmalige Einrichtung:
+
+1. **DNS:** Für `td.rennecke.org` einen `A`/`AAAA`-Eintrag (oder `CNAME`) auf den Uberspace-Host setzen.
+2. Auf dem Uberspace (per SSH):
+   ```bash
+   uberspace web domain add td.rennecke.org
+   uberspace tools version use node 22
+   ```
+3. **GitHub → Settings → Secrets and variables → Actions → Secrets:** `SFTP_HOST`, `SFTP_USERNAME`,
+   `SFTP_PRIVATE_KEY` (wie beim Adventskalender; der öffentliche Schlüssel muss in `~/.ssh/authorized_keys` stehen).
+   Optional als *Variables*: `TD_REMOTE_ROOT` (Standard `lan-td`), `TD_PORT` (`61235`), `TD_DOMAIN` (`td.rennecke.org`).
+4. Workflow per Push auf `main` oder manuell („Run workflow“) starten.
+
+Nützlich auf dem Server: `supervisorctl status lan-td`, `supervisorctl restart lan-td`, `supervisorctl tail -f lan-td stderr`.

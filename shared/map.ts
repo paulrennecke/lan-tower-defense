@@ -38,9 +38,34 @@ export let FLY_FLOW: Float32Array = new Float32Array(0);
 export const cellIndex = (x: number, y: number) => y * MAP_W + x;
 export const inMap = (x: number, y: number) => x >= 0 && y >= 0 && x < MAP_W && y < MAP_H;
 
+interface MapState {
+  def: MapDef; walkable: typeof WALKABLE; water: typeof WATER; exit: typeof EXIT; sectionOf: typeof SECTION_OF;
+  zoneCenter: typeof ZONE_CENTER; gate: typeof GATE; flyPassable: typeof FLY_PASSABLE; flyFlow: typeof FLY_FLOW;
+}
+/** Computed map data per map id – switching back to a known map is cheap (several rooms may play different maps). */
+const mapCache = new Map<string, MapState>();
+
 export function setActiveMap(id: string) {
   const def = MAP_BY_ID[id] ?? MAP_BY_ID[DEFAULT_MAP];
   if (def.id === MAP_ID) return;
+  const cached = mapCache.get(def.id);
+  if (cached) {
+    MAP_ID = def.id;
+    MAP_DEF = def;
+    MAP_W = def.w;
+    MAP_H = def.h;
+    LANES = def.spawns.length;
+    SPAWNS = def.spawns;
+    WALKABLE = cached.walkable;
+    WATER = cached.water;
+    EXIT = cached.exit;
+    SECTION_OF = cached.sectionOf;
+    ZONE_CENTER = cached.zoneCenter;
+    GATE = cached.gate;
+    FLY_PASSABLE = cached.flyPassable;
+    FLY_FLOW = cached.flyFlow;
+    return;
+  }
   MAP_ID = def.id;
   MAP_DEF = def;
   MAP_W = def.w;
@@ -76,6 +101,10 @@ export function setActiveMap(id: string) {
   FLY_PASSABLE = new Uint8Array(n);
   for (let i = 0; i < n; i++) FLY_PASSABLE[i] = WALKABLE[i] | WATER[i];
   FLY_FLOW = computeFlow(new Uint8Array(n), FLY_PASSABLE);
+  mapCache.set(def.id, {
+    def, walkable: WALKABLE, water: WATER, exit: EXIT, sectionOf: SECTION_OF, zoneCenter: ZONE_CENTER, gate: GATE,
+    flyPassable: FLY_PASSABLE, flyFlow: FLY_FLOW,
+  });
 }
 
 export function isBuildable(x: number, y: number): boolean {

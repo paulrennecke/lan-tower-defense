@@ -132,7 +132,8 @@ export interface GameSummary {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; name: string; token?: string }
+  /** `owner` is a permanent per-browser key – online, save games belong to it. */
+  | { t: 'hello'; name: string; token?: string; owner?: string }
   | { t: 'setClass'; classId: string }
   | { t: 'setName'; name: string }
   | { t: 'lobbyReady'; ready: boolean }
@@ -160,7 +161,7 @@ export type ClientMsg =
 
 export type ServerMsg =
   | { t: 'welcome'; you: string; token: string }
-  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string }
+  | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string; room?: RoomInfo | null }
   | { t: 'game'; state: FullState }
   | Snapshot
   | { t: 'tower'; tower: TowerInfo }
@@ -172,4 +173,27 @@ export type ServerMsg =
   /** A player joined the running game. */
   | { t: 'joined'; player: LobbyPlayer & PlayerStats }
   | { t: 'gameOver'; wave: number; victory: boolean; highscore: number; newRecord: boolean; stats: PlayerEndStats[]; summary: GameSummary }
-  | { t: 'error'; msg: string };
+  | { t: 'error'; msg: string }
+  /** Online: the room code does not exist (any more). */
+  | { t: 'noRoom' };
+
+/** Online room as shown in the room list (`GET /api/rooms`) and the lobby. */
+export interface RoomInfo {
+  code: string;
+  name: string;
+  public: boolean;
+  phase: GamePhase;
+  map: string;
+  players: number;
+  spectators: number;
+  wave: number;
+}
+
+/** `GET /api/config` */
+export interface ServerConfig {
+  mode: 'lan' | 'online';
+}
+
+export const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export const ROOM_CODE_LEN = 4;
+export const isRoomCode = (s: string) => new RegExp(`^[${ROOM_CODE_CHARS}]{${ROOM_CODE_LEN}}$`).test(s);

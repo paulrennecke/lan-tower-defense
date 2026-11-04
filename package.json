@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "bots": "tsx tools/bots.ts",
-    "balance": "tsx tools/balance.ts"
+    "balance": "tsx tools/balance.ts",
+    "package:lan": "tsx tools/package-lan.ts"
   },
   "dependencies": {
     "three": "^0.187.0",

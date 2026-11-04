@@ -32,6 +32,8 @@ export interface LobbyActions {
   setMap(id: string): void;
   setPos(x: number, y: number): void;
   kick(id: string): void;
+  /** Online: leave the room (back to the room list). */
+  leave?(): void;
 }
 
 type LobbyMsg = Extract<ServerMsg, { t: 'lobby' }>;
@@ -115,14 +117,28 @@ export class LobbyUI {
             <div class="chat-log"></div>
             <input class="chat-in" placeholder="Nachricht… (Enter)" style="width:100%" maxlength="200">
           </div>
-          <div class="panel" style="margin-top:16px;font-size:13px">
+          <div class="panel invite-lan" style="margin-top:16px;font-size:13px">
             <b class="gold">Mitspieler einladen:</b> Andere Rechner im selben Netzwerk öffnen
             <div style="font-size:16px;margin:4px 0"><code>${esc(location.host)}</code></div>
             <span class="muted">(Statt "localhost" die LAN-IP verwenden, die der Server beim Start anzeigt.)</span>
           </div>
+          <div class="panel invite-online hidden" style="margin-top:16px;font-size:13px">
+            <b class="gold">Mitspieler einladen:</b> <span class="room-title"></span>
+            <div class="row" style="margin:6px 0">
+              <span class="room-code"></span>
+              <button class="copy-link" style="margin-left:auto">🔗 Link kopieren</button>
+            </div>
+            <div class="muted room-link" style="word-break:break-all"></div>
+            <div class="row" style="margin-top:8px"><button class="leave">⬅ Raum verlassen</button></div>
+          </div>
         </div>
       </div>`;
     root.appendChild(this.el);
+    this.q('.leave').onclick = () => actions.leave?.();
+    this.q('.copy-link').onclick = () => {
+      const link = this.q('.room-link').textContent ?? '';
+      void navigator.clipboard?.writeText(link).then(() => { this.q('.copy-link').textContent = '✔ Kopiert'; });
+    };
 
     const nameIn = this.q<HTMLInputElement>('.name');
     nameIn.value = initialName;
@@ -240,6 +256,17 @@ export class LobbyUI {
     else info = 'Der Host 👑 startet das Spiel.';
     this.q('.info').innerHTML = info;
     this.renderSaves(msg, isHost);
+    this.renderInvite(msg);
+  }
+
+  private renderInvite(msg: LobbyMsg) {
+    const room = msg.room;
+    this.q('.invite-lan').classList.toggle('hidden', !!room);
+    this.q('.invite-online').classList.toggle('hidden', !room);
+    if (!room) return;
+    this.q('.room-title').textContent = `${room.name}${room.public ? '' : ' (privat)'}`;
+    this.q('.room-code').textContent = room.code;
+    this.q('.room-link').textContent = `${location.origin}${location.pathname}#${room.code}`;
   }
 
   private renderSaves(msg: LobbyMsg, isHost: boolean) {

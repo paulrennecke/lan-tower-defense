@@ -5,7 +5,7 @@ import type { ClientMsg, ServerMsg } from '../shared/protocol';
 export class Client {
   ws: WebSocket;
   msgs: ServerMsg[] = [];
-  constructor(port: number) { this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); this.ws.on('message', (d) => this.msgs.push(JSON.parse(String(d)))); }
+  constructor(port: number, query = '') { this.ws = new WebSocket(`ws://127.0.0.1:${port}/ws${query}`); this.ws.on('message', (d) => this.msgs.push(JSON.parse(String(d)))); }
   open() { return new Promise<void>((r) => this.ws.once('open', () => r())); }
   send(m: ClientMsg) { this.ws.send(JSON.stringify(m)); }
   async wait<T extends ServerMsg['t']>(t: T, pred: (m: Extract<ServerMsg, { t: T }>) => boolean = () => true, ms = 5000): Promise<Extract<ServerMsg, { t: T }>> {
