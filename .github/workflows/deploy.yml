@@ -21,6 +21,9 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 env:
   REMOTE_ROOT: ${{ vars.TD_REMOTE_ROOT || 'lan-td' }}
   TD_PORT: ${{ vars.TD_PORT || '61235' }}
