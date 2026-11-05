@@ -1,0 +1,124 @@
+# Deploys LAN TD (online mode) to Uberspace: https://td.rennecke.org
+#
+# Required repository secrets (same as the Adventskalender):
+#   SFTP_HOST         Uberspace host, e.g. xyz.uberspace.de
+#   SFTP_USERNAME     Uberspace user
+#   SFTP_PRIVATE_KEY  private SSH key (the public key is in ~/.ssh/authorized_keys on Uberspace)
+# Optional repository variables (Settings → Secrets and variables → Actions → Variables):
+#   TD_REMOTE_ROOT    code directory on Uberspace, relative to $HOME (default: lan-td)
+#   TD_PORT           local port of the Node service (default: 61235)
+#   TD_DOMAIN         domain (default: td.rennecke.org)
+name: Deploy to Uberspace
+
+on:
+  push:
+    branches:
+      - main
+      - feature/online-mode
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  REMOTE_ROOT: ${{ vars.TD_REMOTE_ROOT || 'lan-td' }}
+  TD_PORT: ${{ vars.TD_PORT || '61235' }}
+  TD_DOMAIN: ${{ vars.TD_DOMAIN || 'td.rennecke.org' }}
+  SERVICE: lan-td
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck & tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build client and LAN download package
+        run: |
+          npm run build
+          npm run package:lan
+
+      - name: Set up SSH key
+        env:
+          SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
+          HOST: ${{ secrets.SFTP_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "$SFTP_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload files
+        env:
+          HOST: ${{ secrets.SFTP_HOST }}
+          USERNAME: ${{ secrets.SFTP_USERNAME }}
+        run: |
+          SSH="ssh -i $HOME/.ssh/id_deploy"
+          $SSH "$USERNAME@$HOST" "mkdir -p '$REMOTE_ROOT' lan-td-data"
+          # Code only – persistent data (saves, highscores) lives in ~/lan-td-data and is never touched.
+          # Excluded paths (e.g. node_modules) are not deleted on the server.
+          rsync -az --delete -e "$SSH" \
+            --include='/dist/***' --include='/server/***' --include='/shared/***' \
+            --include='/package.json' --include='/package-lock.json' --include='/tsconfig.json' --include='/.npmrc' \
+            --exclude='*' \
+            ./ "$USERNAME@$HOST:$REMOTE_ROOT/"
+
+      - name: Install runtime dependencies on server
+        env:
+          HOST: ${{ secrets.SFTP_HOST }}
+          USERNAME: ${{ secrets.SFTP_USERNAME }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "cd '$REMOTE_ROOT' && node --version && npm ci --omit=dev --no-audit --no-fund"
+
+      - name: Configure and restart service
+        env:
+          HOST: ${{ secrets.SFTP_HOST }}
+          USERNAME: ${{ secrets.SFTP_USERNAME }}
+        run: |
+          cat > "$SERVICE.ini" <<EOF
+          [program:$SERVICE]
+          directory=%(ENV_HOME)s/$REMOTE_ROOT
+          command=node --import tsx server/index.ts
+          environment=NODE_ENV="production",TD_MODE="online",PORT="$TD_PORT",DATA_DIR="%(ENV_HOME)s/lan-td-data",TD_ORIGIN="https://$TD_DOMAIN"
+          autostart=yes
+          autorestart=yes
+          startsecs=10
+          EOF
+          SSH="ssh -i $HOME/.ssh/id_deploy $USERNAME@$HOST"
+          $SSH "mkdir -p ~/etc/services.d"
+          scp -i ~/.ssh/id_deploy "$SERVICE.ini" "$USERNAME@$HOST:etc/services.d/$SERVICE.ini"
+          $SSH "supervisorctl reread && supervisorctl update && supervisorctl restart $SERVICE && sleep 3 && supervisorctl status $SERVICE"
+
+      - name: Configure web backend
+        env:
+          HOST: ${{ secrets.SFTP_HOST }}
+          USERNAME: ${{ secrets.SFTP_USERNAME }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "uberspace web backend set $TD_DOMAIN --http --port $TD_PORT"
+
+      - name: Smoke test
+        env:
+          HOST: ${{ secrets.SFTP_HOST }}
+          USERNAME: ${{ secrets.SFTP_USERNAME }}
+        run: |
+          sleep 5
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "curl -fsS 'http://127.0.0.1:$TD_PORT/api/config'" | grep -q '"online"'
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "curl -fsSI 'http://127.0.0.1:$TD_PORT/download/lan-td.zip'" | head -n 1
+          echo "✅ Deployed: https://$TD_DOMAIN"
