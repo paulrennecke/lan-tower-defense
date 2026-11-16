@@ -68,7 +68,16 @@ for _ in $(seq 1 40); do
   if curl -fsS --max-time 3 "http://127.0.0.1:$NEW_PORT/api/config" 2>/dev/null | grep -q "\"version\":\"$VERSION\""; then ok=1; break; fi
   sleep 1.5
 done
-[ -n "$ok" ] || { echo "Neue Instanz wurde nicht gesund:"; supervisorctl status "$SERVICE-s$NEW" || true; exit 1; }
+[ -n "$ok" ] || {
+  echo "Neue Instanz wurde nicht gesund:"
+  supervisorctl status "$SERVICE-s$NEW" || true
+  echo "--- node: $(command -v node) $(node --version 2>&1)"
+  echo "--- supervisor stderr:"; supervisorctl tail "$SERVICE-s$NEW" stderr 2>&1 | tail -n 30 || true
+  echo "--- supervisor stdout:"; supervisorctl tail "$SERVICE-s$NEW" stdout 2>&1 | tail -n 15 || true
+  echo "--- direct start (8 s):"
+  (cd "$REL" && NODE_ENV=production TD_MODE=online PORT="$NEW_PORT" DATA_DIR="$DATA" timeout 8 node --import tsx server/index.ts 2>&1 | tail -n 30) || true
+  exit 1
+}
 
 # --- switch: router state (atomic) + router service ------------------------------------------------------------
 PORTS=$(for i in $(seq 0 $((SLOTS - 1))); do slot_port "$i"; done | paste -sd, -)
