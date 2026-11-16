@@ -25,6 +25,8 @@
     <linearGradient id="topfade" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#050b18" stop-opacity="0.75"/><stop offset="1" stop-color="#050b18" stop-opacity="0"/>
     </linearGradient>
+    <clipPath id="fieldclip"><rect x="0" y="225" width="1000" height="775"/></clipPath>
+    <linearGradient id="imgfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a1630"/><stop offset="1" stop-color="#0a1630" stop-opacity="0"/></linearGradient>
     <filter id="blur40" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
     <filter id="blur3" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
     <filter id="blur8" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="8"/></filter>
@@ -39,12 +41,14 @@
     <ellipse cx="520" cy="230" rx="320" ry="40" fill="#b45bff" opacity="0.35" transform="rotate(-5 520 230)"/>
   </g>
   <g id="stars"></g>
-  <g id="scene" filter="url(#drop)"></g>
-  <g id="shots"></g>
-  <g id="snow"></g>
+  <image href="game-raw.png" x="0" y="16" width="1000" height="1000" preserveAspectRatio="none" clip-path="url(#fieldclip)"/>
+  <rect x="0" y="225" width="1000" height="90" fill="url(#imgfade)"/>
+  <g id="scene" display="none"></g>
+  <g id="shots" display="none"></g>
+  <g id="snow" display="none"></g>
 
   <rect x="0" y="0" width="1000" height="330" fill="url(#topfade)"/>
-  <rect x="0" y="690" width="1000" height="310" fill="url(#band)"/>
+  <rect x="0" y="640" width="1000" height="360" fill="url(#band)"/>
 
   <g text-anchor="middle">
     <text x="500" y="150" font-size="118" font-weight="bold" fill="#0a1a38" stroke="#0a1a38" stroke-width="14" stroke-linejoin="round" opacity="0.9">LAN TD</text>
@@ -55,11 +59,6 @@
   <text x="170" y="140" font-size="76" fill="#cfeaff" filter="url(#glow)" text-anchor="middle">❄</text>
   <text x="830" y="140" font-size="76" fill="#cfeaff" filter="url(#glow)" text-anchor="middle">❄</text>
   <g id="chips" class="ui" text-anchor="middle" font-size="25" font-weight="600" fill="#eaf4ff"></g>
-
-  <g text-anchor="middle">
-    <text x="500" y="932" font-size="46" font-weight="bold" fill="url(#gold)" stroke="#2a1a05" stroke-width="1" letter-spacing="1">td.rennecke.org</text>
-    <text class="ui" x="500" y="968" font-size="21" fill="#9fc3ea" letter-spacing="3">KOSTENLOS · IM BROWSER · KEINE INSTALLATION</text>
-  </g>
 </svg>
 
 <script>
@@ -79,7 +78,7 @@ const stars = document.getElementById('stars');
 for (let i = 0; i < 110; i++) el('circle', { cx: rnd() * 1000, cy: rnd() * 420, r: 0.5 + rnd() * 1.5, fill: '#fff', opacity: 0.25 + rnd() * 0.6 }, stars);
 
 // ---- isometric scene ---------------------------------------------------
-const N = 11, TW = 64, TH = 32, OX = 500, OY = 352;
+const N = 11, TW = 64, TH = 32, OX = 500, OY = 395;
 const iso = (gx, gy, z = 0) => [OX + (gx - gy) * TW / 2, OY + (gx + gy) * TH / 2 - z];
 const pts = (a) => a.map((p) => p.join(',')).join(' ');
 const shade = (hex, f) => {
@@ -228,15 +227,16 @@ for (let i = 0; i < 90; i++) el('circle', { cx: rnd() * 1000, cy: rnd() * 1000, 
 // feature chips
 const chips = document.getElementById('chips');
 const feats = [['🌐', 'Online-Räume'], ['🖧', 'LAN-Party'], ['👥', 'Bis zu 16 Spieler'], ['⚔', '40 Wellen & Endlos']];
-const cw = 232, gap = 10, total = feats.length * cw + (feats.length - 1) * gap;
+const cw = 330, gap = 18, ch = 70;
 feats.forEach(([icon, label], i) => {
-  const x = 500 - total / 2 + i * (cw + gap);
-  el('rect', { x, y: 742, width: cw, height: 58, rx: 31, fill: '#0b1d3a', 'fill-opacity': 0.85, stroke: '#f2c14e', 'stroke-opacity': 0.8, 'stroke-width': 2 }, chips);
-  const t = el('text', { x: x + cw / 2, y: 779, 'font-size': 21 }, chips); t.textContent = `${icon} ${label}`;
+  const x = 500 - cw - gap / 2 + (i % 2) * (cw + gap), y = 790 + Math.floor(i / 2) * (ch + 18);
+  el('rect', { x, y, width: cw, height: ch, rx: 35, fill: '#0b1d3a', 'fill-opacity': 0.9, stroke: '#f2c14e', 'stroke-opacity': 0.85, 'stroke-width': 2.5 }, chips);
+  const t = el('text', { x: x + cw / 2, y: y + 46, 'font-size': 29 }, chips); t.textContent = icon + ' ' + label;
 });
-const sub = el('text', { x: 500, y: 866, 'font-size': 29, fill: '#cfe3fb', 'font-style': 'italic', 'font-family': 'Georgia, serif' }, chips);
-sub.textContent = 'Baut Labyrinthe. Haltet das Tor. Gemeinsam.';
 </script>
 </body>
 </html>
+
+
+
 
