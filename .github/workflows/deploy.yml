@@ -1,36 +1,34 @@
-# Deploys LAN TD (online mode) to Uberspace: https://td.rennecke.org
+# Deploys LAN TD (online mode) to Uberspace.
+#   every push, any branch  -> https://dev.td.rennecke.org   (latest push wins)
+#   push to main            -> https://td.rennecke.org        (same build, after dev succeeded)
+#
+# Deployments are rolling: the new version starts next to the running one and only receives new visitors and new
+# rooms; running rooms stay on their old instance until they are empty (see tools/deploy-remote.sh).
 #
 # Required repository secrets (same as the Adventskalender):
 #   SFTP_HOST         Uberspace host, e.g. xyz.uberspace.de
 #   SFTP_USERNAME     Uberspace user
 #   SFTP_PRIVATE_KEY  private SSH key (the public key is in ~/.ssh/authorized_keys on Uberspace)
 # Optional repository variables (Settings → Secrets and variables → Actions → Variables):
-#   TD_REMOTE_ROOT    code directory on Uberspace, relative to $HOME (default: lan-td)
-#   TD_PORT           local port of the Node service (default: 61235)
-#   TD_DOMAIN         domain (default: td.rennecke.org)
+#   TD_REMOTE_ROOT / TD_DEV_REMOTE_ROOT   code directory relative to $HOME (default: lan-td / lan-td-dev)
+#   TD_PORT / TD_DEV_PORT                 public router port; instances use the next 4 ports (default: 61235 / 61245)
+#   TD_DOMAIN / TD_DEV_DOMAIN             domain (default: td.rennecke.org / dev.td.rennecke.org)
 name: Deploy to Uberspace
 
 on:
   push:
     branches:
-      - main
-      - feature/online-mode
+      - '**'
   workflow_dispatch:
 
-concurrency:
-  group: deploy
-  cancel-in-progress: false
-
-env:
-  REMOTE_ROOT: ${{ vars.TD_REMOTE_ROOT || 'lan-td' }}
-  TD_PORT: ${{ vars.TD_PORT || '61235' }}
-  TD_DOMAIN: ${{ vars.TD_DOMAIN || 'td.rennecke.org' }}
-  SERVICE: lan-td
+permissions:
+  contents: read
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -49,15 +47,79 @@ jobs:
           npm run typecheck
           npm test
 
+      - name: Determine version
+        id: version
+        run: |
+          base=$(node -p "require('./package.json').version")
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then v="$base"; else v="$base-dev.${GITHUB_SHA::7}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Version: $v"
+
       - name: Build client and LAN download package
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
         run: |
           npm run build
           npm run package:lan
 
+      - name: Install runtime dependencies
+        run: |
+          mkdir -p release
+          cp -r dist server shared package.json package-lock.json tsconfig.json .npmrc release/
+          cd release && npm ci --omit=dev --no-audit --no-fund
+
+      - name: Upload release
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            release
+            tools/deploy-remote.sh
+          include-hidden-files: true
+          retention-days: 3
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        # dev always, prod only for main (dev runs first and gates prod)
+        target: ${{ fromJSON(github.ref == 'refs/heads/main' && '["dev","prod"]' || '["dev"]') }}
+    concurrency:
+      group: deploy-${{ matrix.target }}
+      cancel-in-progress: false
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      HOST: ${{ secrets.SFTP_HOST }}
+      USERNAME: ${{ secrets.SFTP_USERNAME }}
+    steps:
+      - name: Select target
+        run: |
+          if [ "${{ matrix.target }}" = "prod" ]; then
+            echo "REMOTE_ROOT=${{ vars.TD_REMOTE_ROOT || 'lan-td' }}" >> "$GITHUB_ENV"
+            echo "PORT=${{ vars.TD_PORT || '61235' }}" >> "$GITHUB_ENV"
+            echo "DOMAIN=${{ vars.TD_DOMAIN || 'td.rennecke.org' }}" >> "$GITHUB_ENV"
+            echo "SERVICE=lan-td" >> "$GITHUB_ENV"
+            echo "DATA_DIR=lan-td-data" >> "$GITHUB_ENV"
+          else
+            echo "REMOTE_ROOT=${{ vars.TD_DEV_REMOTE_ROOT || 'lan-td-dev' }}" >> "$GITHUB_ENV"
+            echo "PORT=${{ vars.TD_DEV_PORT || '61245' }}" >> "$GITHUB_ENV"
+            echo "DOMAIN=${{ vars.TD_DEV_DOMAIN || 'dev.td.rennecke.org' }}" >> "$GITHUB_ENV"
+            echo "SERVICE=lan-td-dev" >> "$GITHUB_ENV"
+            echo "DATA_DIR=lan-td-dev-data" >> "$GITHUB_ENV"
+          fi
+          echo "RELEASE=${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Download release
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+
       - name: Set up SSH key
         env:
           SFTP_PRIVATE_KEY: ${{ secrets.SFTP_PRIVATE_KEY }}
-          HOST: ${{ secrets.SFTP_HOST }}
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -65,57 +127,26 @@ jobs:
           chmod 600 ~/.ssh/id_deploy
           ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
 
-      - name: Upload files
-        env:
-          HOST: ${{ secrets.SFTP_HOST }}
-          USERNAME: ${{ secrets.SFTP_USERNAME }}
+      - name: Upload release
         run: |
           SSH="ssh -i $HOME/.ssh/id_deploy"
-          $SSH "$USERNAME@$HOST" "mkdir -p '$REMOTE_ROOT' lan-td-data"
-          # Code only – persistent data (saves, highscores) lives in ~/lan-td-data and is never touched.
-          # Excluded paths (e.g. node_modules) are not deleted on the server.
-          rsync -az --delete -e "$SSH" \
-            --include='/dist/***' --include='/server/***' --include='/shared/***' \
-            --include='/package.json' --include='/package-lock.json' --include='/tsconfig.json' --include='/.npmrc' \
-            --exclude='*' \
-            ./ "$USERNAME@$HOST:$REMOTE_ROOT/"
+          $SSH "$USERNAME@$HOST" "mkdir -p '$REMOTE_ROOT/releases/$RELEASE' '$DATA_DIR'"
+          # Code only – persistent data (saves, highscores) lives in ~/$DATA_DIR and is never touched.
+          rsync -az --delete -e "$SSH" release/ "$USERNAME@$HOST:$REMOTE_ROOT/releases/$RELEASE/"
 
-      - name: Install runtime dependencies on server
-        env:
-          HOST: ${{ secrets.SFTP_HOST }}
-          USERNAME: ${{ secrets.SFTP_USERNAME }}
+      - name: Rolling deploy
         run: |
-          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "cd '$REMOTE_ROOT' && node --version && npm ci --omit=dev --no-audit --no-fund"
-
-      - name: Configure and restart service
-        env:
-          HOST: ${{ secrets.SFTP_HOST }}
-          USERNAME: ${{ secrets.SFTP_USERNAME }}
-        run: |
-          cat > "$SERVICE.ini" <<EOF
-          [program:$SERVICE]
-          directory=%(ENV_HOME)s/$REMOTE_ROOT
-          command=node --import tsx server/index.ts
-          environment=NODE_ENV="production",TD_MODE="online",PORT="$TD_PORT",DATA_DIR="%(ENV_HOME)s/lan-td-data",TD_ORIGIN="https://$TD_DOMAIN"
-          autostart=yes
-          autorestart=yes
-          startsecs=10
-          EOF
-          SSH="ssh -i $HOME/.ssh/id_deploy $USERNAME@$HOST"
-          $SSH "mkdir -p ~/etc/services.d"
-          scp -i ~/.ssh/id_deploy "$SERVICE.ini" "$USERNAME@$HOST:etc/services.d/$SERVICE.ini"
-          $SSH "supervisorctl reread && supervisorctl update && supervisorctl restart $SERVICE && sleep 3 && supervisorctl status $SERVICE"
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" \
+            "REMOTE_ROOT='$REMOTE_ROOT' SERVICE='$SERVICE' PORT='$PORT' DOMAIN='$DOMAIN' DATA_DIR='$DATA_DIR' RELEASE='$RELEASE' VERSION='$VERSION' bash -s" \
+            < tools/deploy-remote.sh
 
       - name: Configure web backend
-        env:
-          HOST: ${{ secrets.SFTP_HOST }}
-          USERNAME: ${{ secrets.SFTP_USERNAME }}
         run: |
-          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "uberspace web backend set $TD_DOMAIN --http --port $TD_PORT"
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "uberspace web domain add $DOMAIN 2>/dev/null || true; uberspace web backend set $DOMAIN --http --port $PORT"
 
       - name: Smoke test
         run: |
           sleep 5
-          curl -fsS "https://$TD_DOMAIN/api/config" | grep -q '"online"'
-          curl -fsSI "https://$TD_DOMAIN/download/lan-td.zip" | head -n 1
-          echo "✅ Deployed: https://$TD_DOMAIN"
+          curl -fsS "https://$DOMAIN/api/config" | grep -q "\"version\":\"$VERSION\""
+          curl -fsSI "https://$DOMAIN/download/lan-td.zip" | head -n 1
+          echo "✅ Deployed $VERSION: https://$DOMAIN"

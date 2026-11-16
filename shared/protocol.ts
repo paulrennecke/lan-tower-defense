@@ -192,6 +192,7 @@ export interface RoomInfo {
 /** `GET /api/config` */
 export interface ServerConfig {
   mode: 'lan' | 'online';
+  version?: string;
 }
 
 export const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

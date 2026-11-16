@@ -167,6 +167,12 @@ table.dmg th { color: var(--gold); background: #1f1a12; }
   position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.55); z-index: 30;
 }
 .overlay .panel { min-width: 560px; max-width: 90vw; max-height: 85vh; overflow: auto; }
+.version-link { color: var(--muted); font-size: 13px; text-decoration: none; }
+.version-link:hover { color: var(--gold); text-decoration: underline; }
+.changelog { max-width: 640px; }
+.changelog h3 { margin: 14px 0 4px; }
+.changelog ul { margin: 0 0 8px; padding-left: 20px; }
+.changelog li { margin: 3px 0; }
 .scoreboard table { border-collapse: collapse; width: 100%; font-size: 14px; }
 .scoreboard td, .scoreboard th { padding: 5px 10px; border-bottom: 1px solid #2a2218; text-align: left; }
 .scoreboard th { color: var(--gold); }

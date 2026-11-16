@@ -1,6 +1,7 @@
 import { MAX_PLAYERS, isRoomCode, type RoomInfo } from '../../../shared/protocol';
 import { MAP_BY_ID } from '../../../shared/maps';
 import { esc } from './format';
+import { bindVersionLink, versionLinkHtml } from './about';
 
 export interface RoomsActions {
   setName(name: string): void;
@@ -20,7 +21,7 @@ export class RoomsUI {
     this.el.id = 'rooms';
     this.el.innerHTML = `
       <h1>❄ LAN TD ❄</h1>
-      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil von Wintermaul TD – online mit Freunden oder als LAN-Runde</div>
+      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil von Wintermaul TD – online mit Freunden oder als LAN-Runde<br>${versionLinkHtml()}</div>
       <div class="notice panel ${notice ? '' : 'hidden'}">${esc(notice)}</div>
       <div class="rooms-grid">
         <div class="panel">
@@ -61,6 +62,7 @@ export class RoomsUI {
         </div>
       </div>`;
     root.appendChild(this.el);
+    bindVersionLink(this.el);
 
     const nameIn = this.q<HTMLInputElement>('.name');
     nameIn.value = name;

@@ -68,7 +68,7 @@ describe('room manager', () => {
 
 describe('online mode', () => {
   it('reports the mode and rejects unknown rooms', async () => {
-    expect(await (await fetch(`${BASE}/api/config`)).json()).toEqual({ mode: 'online' });
+    expect(await (await fetch(`${BASE}/api/config`)).json()).toMatchObject({ mode: 'online', version: expect.any(String) });
     const c = new Client(PORT, '?room=ZZZZ');
     clients.push(c);
     await c.open();

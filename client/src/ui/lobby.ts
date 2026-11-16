@@ -2,6 +2,7 @@ import { CLASSES, CLASS_BY_ID } from '../../../shared/data/classes';
 import { MAX_PLAYERS, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
 import { CLASS_ICONS, TOWER_ICONS, damageTableHtml, esc, hex } from './format';
 import { MAPS, type MapDef } from '../../../shared/maps';
+import { bindVersionLink, versionLinkHtml } from './about';
 
 /** Small top-down preview of a map (like the WC3 minimap). */
 export function drawMapPreview(cv: HTMLCanvasElement, def: MapDef) {
@@ -48,7 +49,7 @@ export class LobbyUI {
     this.el.id = 'lobby';
     this.el.innerHTML = `
       <h1>❄ LAN TD ❄</h1>
-      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil von Wintermaul TD (Warcraft III) – bis zu ${MAX_PLAYERS} Spieler, 40 Wellen, danach Endlos-Modus</div>
+      <div class="subtitle">Kooperatives Maze-Tower-Defense im Stil von Wintermaul TD (Warcraft III) – bis zu ${MAX_PLAYERS} Spieler, 40 Wellen, danach Endlos-Modus<br>${versionLinkHtml()}</div>
       <div class="lobby-grid">
         <div>
           <div class="panel">
@@ -134,6 +135,7 @@ export class LobbyUI {
         </div>
       </div>`;
     root.appendChild(this.el);
+    bindVersionLink(this.el);
     this.q('.leave').onclick = () => actions.leave?.();
     this.q('.copy-link').onclick = () => {
       const link = this.q('.room-link').textContent ?? '';

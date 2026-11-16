@@ -1,7 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
+
+// CI sets APP_VERSION (plain version on main, "-dev.<sha>" suffix on other branches).
+const pkgVersion = JSON.parse(readFileSync('package.json', 'utf8')).version as string;
+const version = process.env.APP_VERSION || `${pkgVersion}-local`;
 
 export default defineConfig({
   root: 'client',
+  define: { __APP_VERSION__: JSON.stringify(version) },
+  plugins: [{
+    name: 'version-json',
+    generateBundle(this: any) { this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version }) }); },
+  }],
   build: {
     outDir: '../dist/client',
     emptyOutDir: true,

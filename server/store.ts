@@ -21,6 +21,11 @@ export class HighscoreStore {
 
   /** Stores the record if the wave beats it; returns true for a new record. */
   submit(map: string, wave: number): boolean {
+    // Other server instances may run in parallel during a rolling deploy – merge their records first.
+    try {
+      const data = JSON.parse(readFileSync(this.file, 'utf8'));
+      for (const [m, w] of Object.entries(data?.maps ?? {})) if (typeof w === 'number' && w > this.of(m)) this.maps[m] = w;
+    } catch { /* no file yet */ }
     if (wave <= this.of(map)) return false;
     this.maps[map] = wave;
     try { writeFileSync(this.file, JSON.stringify({ maps: this.maps, date: new Date().toISOString() })); } catch { /* ignore */ }

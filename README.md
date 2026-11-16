@@ -215,24 +215,34 @@ Lokal ausprobieren: `npm run build`, dann `TD_MODE=online npm run server` (Power
 | `MAX_CONN_PER_IP` / `MAX_ROOMS_PER_IP` | `20` / `10` | Verbindungen je IP / neue Räume je IP in 10 Min. |
 | `MSG_RATE` / `MAX_SAVES` | `60` / `20` | Nachrichten pro Sekunde und Verbindung / Spielstände pro Browser |
 
-### Deployment auf Uberspace
+### Versionen, Changelog und Deployment
 
-Jeder Push auf `main` startet [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml): Typecheck + Tests, Build,
-LAN-Paket bauen, Code per `rsync` nach `~/lan-td` kopieren, `npm ci --omit=dev`, supervisord-Dienst `lan-td`
-(Port 61235) neu starten und `uberspace web backend` für die Domain setzen. Spielstände und Rekorde liegen in
-`~/lan-td-data` und bleiben bei Deployments erhalten.
+- **Version:** `version` in [`package.json`](package.json) (SemVer). Sie steht in Lobby/Raumliste (`v1.1.0 · Neuigkeiten`),
+  im Spielmenü (F10) und in `/api/config`. Branch-Builds heißen `1.1.0-dev.<sha>`, lokale Builds `1.1.0-local`.
+- **Changelog:** [`CHANGELOG.md`](CHANGELOG.md) – nur spielrelevante Änderungen, neue Einträge oben. Das Spiel zeigt die
+  Datei direkt an (Klick auf die Version bzw. „🆕 Neuigkeiten“ im Menü). Bei jedem Release `version` anheben und einen Eintrag ergänzen.
+- **Umgebungen:** Jeder Push (beliebiger Branch) deployt nach <https://dev.td.rennecke.org>; Pushes auf `main` werden
+  anschließend – nach erfolgreichem Dev-Deployment – nach <https://td.rennecke.org> ausgeliefert.
+- **Rolling Deployment:** [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) baut einmal (Typecheck, Tests, Build, LAN-Paket)
+  und lädt das Release nach `~/lan-td[-dev]/releases/<id>`. [`tools/deploy-remote.sh`](tools/deploy-remote.sh) startet es als neue
+  Instanz neben der alten; ein kleiner Router ([`server/router.ts`](server/router.ts)) auf dem öffentlichen Port schickt neue
+  Besucher und neue Räume zur neuen Version, bestehende Räume bleiben auf ihrer (alten) Instanz, bis sie leer sind – laufende Spiele
+  werden nicht unterbrochen. Leere alte Instanzen räumt das nächste Deployment auf. Es gibt 4 Slots; sind alle noch durch laufende Räume belegt, bricht das Deployment ab.
+  Spielstände und Rekorde liegen in `~/lan-td-data` bzw. `~/lan-td-dev-data` und bleiben erhalten.
+- Nach der Umstellung läuft Prod/Dev als `lan-td-router` + `lan-td-s0…s3` (supervisord). Das allererste Rolling-Deployment ersetzt den alten
+  Einzel-Dienst `lan-td` und unterbricht dabei einmalig.
+- Grenze: Ändert sich das Netzwerkprotokoll zwischen Versionen, sollten laufende Räume vor einem Reload der Seite zu Ende gespielt werden
+  (ein neu geladener Client spricht die neue Version, der Raum läuft noch auf der alten).
 
 Einmalige Einrichtung:
 
-1. **DNS:** Für `td.rennecke.org` einen `A`/`AAAA`-Eintrag (oder `CNAME`) auf den Uberspace-Host setzen.
-2. Auf dem Uberspace (per SSH):
-   ```bash
-   uberspace web domain add td.rennecke.org
-   uberspace tools version use node 22
-   ```
+1. **DNS:** Für `td.rennecke.org` **und** `dev.td.rennecke.org` einen `A`/`AAAA`-Eintrag (oder `CNAME`) auf den Uberspace-Host setzen.
+2. Auf dem Uberspace (per SSH): `uberspace tools version use node 22` (die Domains legt der Workflow per `uberspace web domain add` an).
 3. **GitHub → Settings → Secrets and variables → Actions → Secrets:** `SFTP_HOST`, `SFTP_USERNAME`,
    `SFTP_PRIVATE_KEY` (wie beim Adventskalender; der öffentliche Schlüssel muss in `~/.ssh/authorized_keys` stehen).
-   Optional als *Variables*: `TD_REMOTE_ROOT` (Standard `lan-td`), `TD_PORT` (`61235`), `TD_DOMAIN` (`td.rennecke.org`).
-4. Workflow per Push auf `main` oder manuell („Run workflow“) starten.
+   Optional als *Variables*: `TD_REMOTE_ROOT` (`lan-td`), `TD_PORT` (`61235`), `TD_DOMAIN` (`td.rennecke.org`) sowie
+   `TD_DEV_REMOTE_ROOT` (`lan-td-dev`), `TD_DEV_PORT` (`61245`), `TD_DEV_DOMAIN` (`dev.td.rennecke.org`). Je Umgebung werden
+   der Router-Port und die 4 folgenden Ports belegt.
+4. Workflow per Push oder manuell („Run workflow“) starten.
 
-Nützlich auf dem Server: `supervisorctl status lan-td`, `supervisorctl restart lan-td`, `supervisorctl tail -f lan-td stderr`.
+Nützlich auf dem Server: `supervisorctl status`, `supervisorctl tail -f lan-td-s0 stderr`, `cat ~/lan-td-data/router.json`.

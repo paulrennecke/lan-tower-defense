@@ -16,6 +16,7 @@ import { Entities } from '../scene/entities';
 import { World, toWorld } from '../scene/world';
 import { sfx } from '../sfx';
 import { CLASS_ICONS, ENEMY_ICONS, TOWER_ICONS, enemyTags, esc, fmt, hex, statLines, towerTooltip } from './format';
+import { APP_VERSION, showChangelog } from './about';
 
 type CPlayer = LobbyPlayer & PlayerStats;
 type Selection = { kind: 'tower' | 'enemy' | 'multi'; id: number } | null;
@@ -110,6 +111,7 @@ export class GameView {
           <button class="h-zones">🔲 Bauraster: an <kbd>G</kbd></button>
           <button class="h-gift">💸 Gold senden <kbd>T</kbd></button>
           <button class="h-rules">📖 Spielregeln <kbd>F1</kbd></button>
+          <button class="h-news">🆕 Neuigkeiten <kbd>v${APP_VERSION}</kbd></button>
           <button class="h-sound">🔊 Ton: an <kbd>M</kbd></button>
           <button class="h-quit hidden">🚪 Spiel beenden <kbd>Shift+Q</kbd></button>
         </div>
@@ -159,6 +161,7 @@ export class GameView {
     this.q('.h-menu').onclick = () => this.toggleMenu();
     this.q('.h-gift').onclick = () => this.openGift();
     this.q('.h-rules').onclick = () => this.toggleRules();
+    this.q('.h-news').onclick = () => showChangelog();
     this.q('.g-cancel').onclick = () => this.q('.o-gift').classList.add('hidden');
     this.q('.g-send').onclick = () => this.sendGift();
     this.q('.o-gift').querySelectorAll<HTMLButtonElement>('[data-add]').forEach((b) => {
