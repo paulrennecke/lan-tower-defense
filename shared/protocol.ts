@@ -58,7 +58,7 @@ export type Fx =
   | ['x', number, number, number, string]    // explosion x, y, radius, kind
   | ['m', number, number, number]            // mine placed: id, x, y
   | ['mx', number]                           // mine removed
-  | ['k', number, number, number]            // kill: x, y, gold
+  | ['k', number, number, number, [string, number][]] // kill: x, y, total gold, gold per player
   | ['l', number]                            // leak: enemyId
   | ['h', number]                            // heal: enemyId
   | ['a', number];                           // tower attack anim (no projectile): towerId

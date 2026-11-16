@@ -1,8 +1,8 @@
 import { ARMOR_NAMES } from '../../../shared/damage';
 import { CLASSES, CLASS_BY_ID, TOWER_BY_ID, type TowerDef } from '../../../shared/data/classes';
 import { MAPS } from '../../../shared/maps';
-import { ENEMIES, ENEMY_BY_ID } from '../../../shared/data/enemies';
-import { START_GOLD, START_LIVES, START_LUMBER, VICTORY_WAVE, WAVE_COUNTDOWN, getWave, waveBounty, waveIncome, waveLumber } from '../../../shared/data/waves';
+import { ENEMY_BY_ID } from '../../../shared/data/enemies';
+import { getWave, VICTORY_WAVE } from '../../../shared/data/waves';
 import {
   GATE, MAP_H, MAP_W, SECTION_OF, SPAWNS, WALKABLE, WATER, cellIndex, setActiveMap, computeFlow, isBuildable, routeLength,
   spawnsConnected, traceRoute,
@@ -17,6 +17,7 @@ import { World, toWorld } from '../scene/world';
 import { sfx } from '../sfx';
 import { CLASS_ICONS, ENEMY_ICONS, TOWER_ICONS, enemyTags, esc, fmt, hex, statLines, towerTooltip } from './format';
 import { APP_VERSION, showChangelog } from './about';
+import { rulesHtml } from './rules';
 
 type CPlayer = LobbyPlayer & PlayerStats;
 type Selection = { kind: 'tower' | 'enemy' | 'multi'; id: number } | null;
@@ -228,6 +229,7 @@ export class GameView {
     mm.style.height = mm.height + 'px';
     this.el.style.setProperty('--mm-h', mm.height + 16 + 'px');
     this.you = state.you;
+    this.ent.youId = state.you;
     this.hostId = hostId;
     this.players = new Map(state.players.map((p) => [p.id, p]));
     this.lanes = state.lanes;
@@ -1201,38 +1203,9 @@ export class GameView {
   }
 
   private renderRules() {
-    const bounty = [1, 5, 10, 20, 30, 40].map((n) => `<tr><td>Welle ${n}</td><td class="num">${waveIncome(n)} 💰</td><td class="num">${waveBounty(n)} 💰</td><td class="num">${waveLumber(n)} 🌲</td></tr>`).join('');
-    const enemies = ENEMIES.map((d) => `<tr><td>${esc(d.name)}${d.boss ? ' 👑' : ''}</td><td class="num">${d.lives}</td><td class="num">${d.bounty}×</td><td>${[d.flying ? 'fliegt' : '', d.invisible ? 'unsichtbar' : '', d.immune ? 'magieimmun' : '', d.regen ? 'regeneriert' : '', d.heal ? 'heilt andere' : '', d.split ? 'teilt sich' : ''].filter(Boolean).join(', ') || '–'}</td></tr>`).join('');
     this.q('.o-rules .panel').innerHTML = `
       <h2 style="margin-top:0">📖 Spielregeln</h2>
-      <h3>Ziel</h3>
-      <p>Alle Spieler verteidigen gemeinsam ein Tor gegen immer stärkere Wellen. Überstehst du Welle <b>${VICTORY_WAVE}</b>, ist das Spiel gewonnen und der <b>Endlos-Modus</b> beginnt – dort zählt nur noch, wie weit ihr kommt. Pro Karte wird die beste erreichte Welle als Rekord gespeichert. Fällt das gemeinsame Leben auf 0, ist das Spiel verloren.</p>
-      <h3>So läuft eine Runde</h3>
-      <ul>
-        <li>Gegner starten an den <b>Portalen</b> (je nach Spielerzahl sind mehrere Spuren aktiv) und laufen zum <b>Tor</b>. Jeder durchgekommene Gegner kostet gemeinsame Leben.</li>
-        <li>Alle Spieler bauen mit ihrer <b>Klasse</b> Türme – überall auf der Karte, wo gebaut werden darf. Die Türme einer Klasse unterscheiden sich in Reichweite, Schaden, Angriffstyp und Spezialfähigkeiten.</li>
-        <li><b>Labyrinth:</b> Gegner laufen immer den kürzesten freien Weg um eure Türme herum. Baut Mauern und Türme so, dass der Weg möglichst lang wird. Den Weg komplett zu versperren ist nicht erlaubt. Flieger ignorieren Türme, müssen aber um Felsen herum.</li>
-        <li><b>Welle 1</b> startet erst, wenn alle Spieler auf „Bereit“ gedrückt haben. Danach beginnt der Countdown zur nächsten Welle (${WAVE_COUNTDOWN} s) erst, wenn der letzte Gegner der Welle besiegt ist; sind alle bereit, geht es nach 3 s los.</li>
-        <li>Türme lassen sich bis <b>Stufe 3</b> aufwerten. Mit <b>Forschung</b> (Gold und Holz) verbessert ihr alle Türme der Klasse und schaltet den stärksten Turm frei.</li>
-        <li>Gold lässt sich an Mitspieler <b>verschenken</b>. Wer die Verbindung verliert, dessen Türme gehören allen gemeinsam. Neue Spieler können später einsteigen.</li>
-      </ul>
-      <h3>Steuerung</h3>
-      <ul>
-        <li><b>Bauen:</b> Taste <kbd>1</kbd>–<kbd>7</kbd> oder Button, Maus oder Pfeiltasten bewegen den Cursor, Klick / <kbd>Enter</kbd> / <kbd>Leertaste</kbd> baut. Der Turmtyp bleibt gewählt, <kbd>Esc</kbd> beendet das Bauen.</li>
-        <li><b>Auswählen:</b> Klick, Pfeiltasten (Turm unter dem Cursor), <kbd>Q</kbd>/<kbd>E</kbd> oder mit der Maus einen Auswahlrahmen aufziehen. Dann <kbd>U</kbd> aufwerten, <kbd>V</kbd>/<kbd>Entf</kbd> verkaufen, <kbd>C</kbd> Zielmodus wechseln.</li>
-        <li><b>Kamera:</b> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, Bildschirmrand, rechte Maustaste ziehen, Mausrad zoomt, <kbd>Leertaste</kbd> springt zu Portalen und Tor.</li>
-      </ul>
-      <h3>Gold, Holz und Leben – genaue Zahlen</h3>
-      <ul>
-        <li><b>Start:</b> ${START_GOLD} Gold, ${START_LUMBER} Holz pro Spieler; ${START_LIVES} gemeinsame Leben (+10 für jede weitere aktive Spur).</li>
-        <li><b>Wellengeld:</b> Zu Beginn jeder Welle bekommt <u>jeder</u> Spieler <b>25 + 5 × Wellennummer</b> Gold (Forschung „Investitionen“ gibt zusätzlich +15 je Stufe) und <b>1 Holz</b> (Boss-Wellen: 2).</li>
-        <li><b>Kopfgeld:</b> Für jeden besiegten Gegner bekommen <u>alle</u> Spieler Gold – unabhängig davon, wer ihn erledigt hat. Es beträgt <b>(2 + ⌊Welle ÷ 3⌋) × Faktor des Gegners</b> (gerundet, mindestens 1), geteilt durch die Zahl der aktiven Spuren (jede Spur schickt die ganze Welle). Der Spieler, dessen Turm den Gegner besiegt, erhält zusätzlich den Bonus der Forschung „Plündern“ (+1 Gold je Stufe).</li>
-        <li><b>Bosse:</b> Wird ein Boss besiegt, bekommen alle Spieler +2 Holz.</li>
-        <li><b>Verkaufen:</b> Du erhältst <b>75 %</b> des insgesamt in den Turm investierten Golds (Bau + Aufwertungen) zurück.</li>
-        <li><b>Leben:</b> Ein durchgekommener Gegner kostet so viele Leben, wie in der Tabelle unten steht.</li>
-      </ul>
-      <table><tr><th>Zeitpunkt</th><th class="num">Wellengeld pro Spieler</th><th class="num">Kopfgeld (Faktor 1×)</th><th class="num">Holz</th></tr>${bounty}</table>
-      <table><tr><th>Gegner</th><th class="num">Leben bei Durchbruch</th><th class="num">Kopfgeld-Faktor</th><th>Besonderheiten</th></tr>${enemies}</table>
+      ${rulesHtml()}
       <div style="text-align:right;margin-top:10px"><button class="close">Schließen <kbd>Esc</kbd></button></div>`;
     this.q('.o-rules .close').onclick = () => this.toggleRules(false);
   }

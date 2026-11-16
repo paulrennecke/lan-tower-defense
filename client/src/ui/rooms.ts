@@ -2,6 +2,7 @@ import { MAX_PLAYERS, isRoomCode, type RoomInfo } from '../../../shared/protocol
 import { MAP_BY_ID } from '../../../shared/maps';
 import { esc } from './format';
 import { bindVersionLink, versionLinkHtml } from './about';
+import { rulesHtml } from './rules';
 
 export interface RoomsActions {
   setName(name: string): void;
@@ -60,6 +61,10 @@ export class RoomsUI {
           </ol>
           <p class="muted" style="font-size:13px">Spielstände und Rekorde der LAN-Runde bleiben auf dem Host-Rechner.</p>
         </div>
+        <details class="panel rules rules-box">
+          <summary><b>📖 Spielregeln</b> <span class="muted">– anklicken zum Aufklappen</span></summary>
+          ${rulesHtml()}
+        </details>
       </div>`;
     root.appendChild(this.el);
     bindVersionLink(this.el);

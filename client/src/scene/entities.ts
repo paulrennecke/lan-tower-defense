@@ -47,6 +47,8 @@ export class Entities {
   private snapInterval = 100;
   readonly fx: FxManager;
   onKillGold?: (gold: number) => void;
+  /** Own player id – decides which part of a kill bounty is shown. */
+  youId = '';
   /** Freezes enemy walk animations while the game is paused. */
   paused = false;
 
@@ -247,9 +249,11 @@ export class Entities {
       case 'm': this.addMine(f[1], f[2], f[3]); break;
       case 'mx': this.removeMine(f[1]); break;
       case 'k': {
-        const [, x, y, gold] = f;
-        this.fx.text(toWorld(x, y, 2), `+${gold}`);
-        this.onKillGold?.(gold);
+        const [, x, y, , shares] = f;
+        // Everybody sees the kill, but only their own share of the gold.
+        const mine = shares.find(([pid]) => pid === this.youId)?.[1] ?? 0;
+        if (mine > 0) this.fx.text(toWorld(x, y, 2), `+${mine}`);
+        this.onKillGold?.(mine);
         break;
       }
       case 'h': {

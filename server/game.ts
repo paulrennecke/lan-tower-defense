@@ -4,7 +4,7 @@ import { CLASS_BY_ID, RESEARCH_BY_ID, TOWER_BY_ID, type TowerStats } from '../sh
 import { auraBuffs, effectiveStats } from '../shared/stats';
 import { ENEMIES, ENEMY_BY_ID, ENEMY_INDEX, type EnemyDef } from '../shared/data/enemies';
 import {
-  FIRST_COUNTDOWN, START_GOLD, START_LIVES, START_LUMBER, VICTORY_WAVE, WAVE_COUNTDOWN,
+  BOUNTY_SHARE, FIRST_COUNTDOWN, START_GOLD, START_LIVES, START_LUMBER, VICTORY_WAVE, WAVE_COUNTDOWN,
   getWave, playerHpMul, waveBaseHp, waveBounty, waveIncome, waveLumber,
 } from '../shared/data/waves';
 import {
@@ -44,6 +44,9 @@ interface Tower extends TowerInfo {
 
 interface Dot { dps: number; until: number; owner: string; towerId: number }
 
+/** Value of one second of a control effect, relative to the others (slow and armour reduction scale with strength). */
+const CONTROL_WEIGHT = { stun: 1, slow: 1, armorRed: 0.1 };
+
 export interface Enemy {
   id: number;
   typeIdx: number;
@@ -64,6 +67,8 @@ export interface Enemy {
   armorRed: number;
   armorRedUntil: number;
   dots: Dot[];
+  /** Contribution of every player to this enemy: damage dealt and control time applied (weighted). Decides the bounty split. */
+  credit: Record<string, { dmg: number; ctl: number }>;
   healCd: number;
   revealed: boolean;
   dead: boolean;
@@ -411,7 +416,7 @@ export class Game {
     const e: Enemy = {
       id: this.nextId++, typeIdx: ENEMY_INDEX[enemyId], def, wave, lane, rem: 0, x: start.x, y: start.y,
       hp, maxHp: hp, bounty: Math.max(1, Math.round(waveBounty(wave) * def.bounty)),
-      slow: 0, slowUntil: 0, stunUntil: 0, armorRed: 0, armorRedUntil: 0, dots: [],
+      slow: 0, slowUntil: 0, stunUntil: 0, armorRed: 0, armorRedUntil: 0, dots: [], credit: {},
       healCd: def.heal?.cd ?? 0, revealed: false, dead: false,
     };
     e.rem = this.remaining(e);
@@ -631,15 +636,26 @@ export class Game {
   private hitEnemy(e: Enemy, s: TowerStats, dmg: number, owner: string, towerId: number) {
     const now = this.time;
     const immune = !!e.def.immune;
+    // Control credit = effect time this hit adds (a refresh of a running effect only counts the extension) × strength.
+    let control = 0;
     if (s.slow && !immune && (e.slowUntil <= now || s.slow >= e.slow)) {
+      const until = now + (s.slowDur ?? 2);
+      control += Math.max(0, until - Math.max(e.slowUntil, now)) * s.slow * CONTROL_WEIGHT.slow;
       e.slow = s.slow;
-      e.slowUntil = now + (s.slowDur ?? 2);
+      e.slowUntil = until;
     }
-    if (s.stun && !immune && Math.random() < s.stun && !e.def.boss) e.stunUntil = Math.max(e.stunUntil, now + (s.stunDur ?? 0.5));
+    if (s.stun && !immune && Math.random() < s.stun && !e.def.boss) {
+      const until = now + (s.stunDur ?? 0.5);
+      control += Math.max(0, until - Math.max(e.stunUntil, now)) * CONTROL_WEIGHT.stun;
+      e.stunUntil = Math.max(e.stunUntil, until);
+    }
     if (s.armorRed && (e.armorRedUntil <= now || s.armorRed >= e.armorRed)) {
+      const until = now + (s.armorRedDur ?? 5);
+      control += Math.max(0, until - Math.max(e.armorRedUntil, now)) * s.armorRed * CONTROL_WEIGHT.armorRed;
       e.armorRed = s.armorRed;
-      e.armorRedUntil = now + (s.armorRedDur ?? 5);
+      e.armorRedUntil = until;
     }
+    if (control > 0) this.credit(e, owner).ctl += control;
     if (s.dot) {
       const existing = e.dots.find((d) => d.towerId === towerId);
       const until = now + (s.dotDur ?? 3);
@@ -650,6 +666,10 @@ export class Game {
     this.damageEnemy(e, real, owner, towerId);
   }
 
+  private credit(e: Enemy, owner: string) {
+    return (e.credit[owner] ??= { dmg: 0, ctl: 0 });
+  }
+
   private damageEnemy(e: Enemy, amount: number, owner: string, towerId: number) {
     if (e.dead || amount <= 0) return;
     const dealt = Math.min(e.hp, amount);
@@ -658,7 +678,32 @@ export class Game {
     const t = this.towers.get(towerId);
     if (p) p.damage += dealt;
     if (t) t.damage += dealt;
+    if (dealt > 0) this.credit(e, owner).dmg += dealt;
     if (e.hp <= 0) this.kill(e, owner, towerId);
+  }
+
+  /** Splits the bounty of a dead enemy by contribution (see BOUNTY_SHARE); returns gold per player. */
+  private splitBounty(e: Enemy, killerId: string): Map<string, number> {
+    // Every lane spawns the full wave: the pool equals what all players together used to get per kill, so the
+    // total income of the team does not depend on the number of lanes in play.
+    const pool = (e.bounty * this.players.size) / Math.max(1, this.lanes.length);
+    const out = new Map<string, number>();
+    const add = (pid: string, v: number) => { if (v > 0 && this.players.has(pid)) out.set(pid, (out.get(pid) ?? 0) + v); };
+    const entries = Object.entries(e.credit).filter(([pid]) => this.players.has(pid));
+    const dmgSum = entries.reduce((s, [, c]) => s + c.dmg, 0);
+    const ctlSum = entries.reduce((s, [, c]) => s + c.ctl, 0);
+    const killPart = pool * BOUNTY_SHARE.kill;
+    const ctlPart = ctlSum > 0 ? pool * BOUNTY_SHARE.control : 0;
+    const dmgPart = pool - killPart - ctlPart;
+    if (this.players.has(killerId)) add(killerId, killPart);
+    else for (const [pid, c] of entries) add(pid, dmgSum > 0 ? killPart * c.dmg / dmgSum : 0);
+    for (const [pid, c] of entries) {
+      if (dmgSum > 0) add(pid, dmgPart * c.dmg / dmgSum);
+      if (ctlSum > 0) add(pid, ctlPart * c.ctl / ctlSum);
+    }
+    // Damage that cannot be attributed to anybody (e.g. nobody left): the killer gets the rest.
+    if (dmgSum <= 0) add(killerId, dmgPart);
+    return out;
   }
 
   private kill(e: Enemy, owner: string, towerId: number) {
@@ -667,18 +712,22 @@ export class Game {
     const killer = this.players.get(owner);
     const t = this.towers.get(towerId);
     if (t) t.kills++;
-    // Kill gold is shared by all players. Every lane spawns the full wave, so the bounty is divided by the number of
-    // lanes – income per player then does not depend on how many lanes are in play.
     this.creepsKilled++;
     this.killsByType[e.def.id] = (this.killsByType[e.def.id] ?? 0) + 1;
-    const share = e.bounty / Math.max(1, this.lanes.length);
-    for (const p of this.players.values()) { p.gold += share; p.goldEarned += share; }
+    const payout = this.splitBounty(e, owner);
+    let total = 0;
+    for (const [pid, gold] of payout) {
+      const p = this.players.get(pid)!;
+      p.gold += gold; p.goldEarned += gold;
+      total += gold;
+    }
     if (killer) {
       killer.kills++;
       for (const [rid, lvl] of Object.entries(killer.research)) {
         const extra = (RESEARCH_BY_ID[rid]?.perLevel.bounty ?? 0) * lvl;
         killer.gold += extra;
         killer.goldEarned += extra;
+        if (extra) { payout.set(owner, (payout.get(owner) ?? 0) + extra); total += extra; }
       }
     }
     if (e.def.boss) {
@@ -686,7 +735,8 @@ export class Game {
       for (const p of this.players.values()) p.lumber += 2;
       this.hooks.event?.('info', `${e.def.name} wurde besiegt! +2 Holz für alle.`);
     }
-    this.fx.push(['k', Math.round(e.x * 10) / 10, Math.round(e.y * 10) / 10, Math.round(share * 10) / 10]);
+    const r1 = (n: number) => Math.round(n * 10) / 10;
+    this.fx.push(['k', r1(e.x), r1(e.y), r1(total), [...payout].map(([pid, g]) => [pid, r1(g)] as [string, number])]);
     if (e.def.split) {
       for (let i = 0; i < e.def.split.count; i++) {
         const child = this.spawnEnemy(e.def.split.into, e.wave, 1, e.lane, { x: e.x + (Math.random() - 0.5) * 0.6, y: e.y + (Math.random() - 0.5) * 0.6 });
@@ -813,7 +863,7 @@ export class Game {
       bossesKilled: this.bossesKilled, livesLost: this.livesLost, creepsKilled: this.creepsKilled,
       players: [...this.players.values()].map((p) => ({ ...p, research: { ...p.research }, ready: false, connected: false })),
       towers: [...this.towers.values()].map((t) => ({ ...this.towerInfo(t), damage: t.damage, cdLeft: t.cdLeft })),
-      enemies: this.enemies.filter((e) => !e.dead).map(({ def: _def, dots, ...e }) => ({ ...e, dots: dots.map((d) => ({ ...d })) })),
+      enemies: this.enemies.filter((e) => !e.dead).map(({ def: _def, dots, credit, ...e }) => ({ ...e, dots: dots.map((d) => ({ ...d })), credit: JSON.parse(JSON.stringify(credit)) })),
       projectiles: this.projectiles.map((p) => ({ ...p })),
       mines: [...this.mines.values()].map((m) => ({ ...m })),
       spawnQueue: this.spawnQueue.map((s) => ({ ...s })),
@@ -854,7 +904,7 @@ export class Game {
     for (const e of s.enemies) {
       const def = ENEMIES[e.typeIdx];
       if (!def) continue;
-      const enemy: Enemy = { ...e, def, dots: e.dots.map((d) => ({ ...d })) };
+      const enemy: Enemy = { ...e, def, dots: e.dots.map((d) => ({ ...d })), credit: JSON.parse(JSON.stringify(e.credit ?? {})) };
       g.enemies.push(enemy);
       g.enemyById.set(enemy.id, enemy);
     }

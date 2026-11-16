@@ -53,6 +53,10 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 #lobby h1, #rooms h1 { text-align: center; margin: 0 0 4px; font-size: 34px; }
 #lobby .subtitle, #rooms .subtitle { text-align: center; color: var(--muted); margin-bottom: 16px; }
 .rooms-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; max-width: 1500px; margin: 0 auto; }
+.rooms-grid .rules-box { grid-column: 1 / -1; }
+details.rules > summary { cursor: pointer; font-size: 17px; list-style-position: inside; }
+details.rules[open] > summary { margin-bottom: 6px; }
+details.rules kbd { font-size: 12px; }
 #rooms .notice { max-width: 1500px; margin: 0 auto 16px; border-color: #c04040; }
 #rooms a { color: var(--gold); }
 .room-code { font-size: 26px; letter-spacing: 6px; font-weight: 700; color: var(--gold); }

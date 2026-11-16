@@ -96,6 +96,14 @@ export function waveBounty(n: number): number {
   return 2 + Math.floor(n / 3);
 }
 
+/**
+ * How the kill bounty of one enemy is divided among the players:
+ * `damage` in proportion to the damage each player dealt to it, `control` in proportion to the slow / stun /
+ * armour reduction time each player applied, `kill` to the player whose tower landed the final hit.
+ * Without any control effect on the enemy the `control` part goes to the damage part.
+ */
+export const BOUNTY_SHARE = { damage: 0.6, control: 0.15, kill: 0.25 } as const;
+
 export function waveIncome(n: number): number {
   return 25 + 5 * n;
 }

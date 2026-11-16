@@ -1,8 +1,9 @@
 import { CLASSES, CLASS_BY_ID } from '../../../shared/data/classes';
 import { MAX_PLAYERS, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
-import { CLASS_ICONS, TOWER_ICONS, damageTableHtml, esc, hex } from './format';
+import { CLASS_ICONS, TOWER_ICONS, esc, hex } from './format';
 import { MAPS, type MapDef } from '../../../shared/maps';
 import { bindVersionLink, versionLinkHtml } from './about';
+import { rulesHtml } from './rules';
 
 /** Small top-down preview of a map (like the WC3 minimap). */
 export function drawMapPreview(cv: HTMLCanvasElement, def: MapDef) {
@@ -75,27 +76,10 @@ export class LobbyUI {
             </div>
             <div class="class-detail"></div>
           </div>
-          <div class="panel help" style="margin-top:16px">
-            <h2 style="margin-top:0">So wird gespielt</h2>
-            <ul>
-              <li>Die Gegner kommen oben aus bis zu <b>vier Portalen</b> und laufen durch die verschneiten Spuren zum <b>Tor</b> im Süden. Jeder darf <b>überall</b> bauen – sprecht euch ab, wer wo verteidigt (setzt dazu oben euer ✖ auf die Karte).</li>
-              <li><b>Es gibt keinen festen Weg:</b> Die Gegner nehmen immer den kürzesten Weg um eure Türme herum. Baut <b>Labyrinthe</b> (Mazes) mit billigen <b>Mauerblöcken</b> (Taste 1, 5 Gold), damit sie lange unter Beschuss laufen. Die rote Linie zeigt den aktuellen Weg (im Menü abschaltbar). <b>Flieger</b> ignorieren Türme, umfliegen aber Felsen.</li>
-              <li>Den Weg <b>komplett blockieren</b> geht nicht – es muss immer ein Durchgang bleiben. <b>Flieger</b> ignorieren das Labyrinth und fliegen direkt zum Tor.</li>
-              <li>Kills bringen den Verteidigern der Spur Gold. Zu jeder Welle gibt es Einkommen und <b>Holz</b> für Forschung &amp; Ultimate-Türme.</li>
-              <li>Durchgelassene Gegner kosten gemeinsame Leben. Bosse kosten viele Leben!</li>
-              <li>Achtung: <b>Luft</b>-Wellen, <b>unsichtbare</b> Gegner (brauchen Erkennung) und <b>Magieimmune</b> (kein Magieschaden).</li>
-            </ul>
-            <h3>Steuerung</h3>
-            <ul>
-              <li><b>1</b> Mauerblock · <b>2–7</b> Turm wählen · <b>Linksklick</b> bauen (<b>Shift</b> = mehrere) · <b>Rechtsklick/Esc</b> abbrechen · per Tastatur: <b>Pfeiltasten</b> Cursor, <b>Enter/Leertaste</b> bauen</li>
-              <li>Turm anklicken: <b>U</b> aufwerten · <b>V</b> verkaufen · <b>F</b> Forschung · <b>N</b> bereit für nächste Welle · <b>P</b> Pause · <b>Strg+S</b> speichern · <b>R</b> Laufweg · <b>G</b> Raster · <b>T</b> Gold senden · <b>M</b> Ton · <b>Shift+Q</b> beenden (Host)</li>
-              <li>Kamera: <b>WASD / Pfeiltasten</b>, Bildschirmrand, <b>rechte/mittlere Maustaste</b> ziehen, <b>Mausrad</b> zoomen, <b>Leertaste</b> = Portale &amp; Tor ansehen</li>
-              <li><b>Alt+Klick</b> Ping für alle · <b>Enter</b> Chat · <b>Tab</b> Punktestand</li>
-              <li><b>P</b> Pause · <b>💾</b> Spiel speichern · Spielstände lädt der Host hier in der Lobby</li>
-            </ul>
-            <h3>Schadenstabelle</h3>
-            ${damageTableHtml()}
-          </div>
+          <details class="panel help rules" style="margin-top:16px">
+            <summary><b>📖 Spielregeln</b> <span class="muted">– anklicken zum Aufklappen</span></summary>
+            ${rulesHtml()}
+          </details>
         </div>
         <div>
           <div class="panel">

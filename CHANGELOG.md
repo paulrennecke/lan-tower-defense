@@ -3,6 +3,12 @@
 Nur spielrelevante Änderungen. Wird auch im Spiel angezeigt (Version unten links bzw. im Menü).
 Neue Einträge oben unter einer Überschrift `## <Version> – <Datum>` ergänzen und `version` in `package.json` anheben.
 
+## 1.1.1 – 2026-11-16
+
+- 💰 **Kopfgeld nach Leistung:** Das Gold für besiegte Gegner bekommt nicht mehr jeder gleich, sondern wer etwas beigetragen hat – 60 % nach verursachtem Schaden, 15 % für Verlangsamen, Betäuben und Rüstung senken, 25 % für den Todesstoß. Wer nichts tut, geht leer aus.
+- 🔢 Über dem Gegner steht nur noch dein eigener Anteil.
+- 📖 Die Spielregeln (mit allen Zahlen und der neuen Kopfgeld-Verteilung) stehen jetzt auch in der Raumübersicht und in der Lobby – eingeklappt, per Klick aufklappbar.
+
 ## 1.1.0 – 2026-11-16
 
 - 🌐 **Online-Modus:** Räume mit 4-stelligem Code, öffentliche Raumliste, Einladungslink, Zuschauer.

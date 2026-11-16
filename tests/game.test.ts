@@ -206,7 +206,7 @@ describe('Game simulation', () => {
     expect(lives).toBe(g.lives);
     expect(g.lives).toBe(START_LIVES - 1);
   });
-  it('kill gold is shared by all players (split by lane count) and leaks cost lives', () => {
+  it('kill gold goes to the players who contributed (and leaks cost lives)', () => {
     let over = false;
     const g = mkGame(['human', 'orc'], { gameOver: () => { over = true; } });
     expect(g.lanes).toEqual([1, 2]);
@@ -217,8 +217,8 @@ describe('Game simulation', () => {
     run(g, 15);
     expect(g.players.get('p0')!.kills).toBeGreaterThan(0);
     expect(g.players.get('p0')!.gold).toBeGreaterThan(10000 - 3 * TOWER_BY_ID.h_watch.cost);
-    // p1 built nothing but still gets its share of the bounty.
-    expect(g.players.get('p1')!.gold).toBeGreaterThan(goldBefore);
+    // p1 built nothing and did nothing: no share of the bounty.
+    expect(g.players.get('p1')!.gold).toBe(goldBefore);
     expect(g.players.get('p1')!.kills).toBe(0);
     // Let everything else leak.
     for (const t of [...g.towers.values()]) g.sell('p0', t.id);
@@ -226,6 +226,49 @@ describe('Game simulation', () => {
     run(g, 120);
     expect(g.lives).toBe(0);
     expect(over).toBe(true);
+  });
+
+  describe('bounty split', () => {
+    const setup = () => {
+      const g = mkGame(['human', 'orc']);
+      const e = g.spawnEnemy('ghoul', 30, 1, laneOf(g, 'p0'));
+      // Two players on two lanes: the pool equals the bounty of one enemy.
+      const pool = e.bounty;
+      const gold = (pid: string) => g.players.get(pid)!.gold;
+      const before = { p0: gold('p0'), p1: gold('p1') };
+      const damage = (pid: string, amount: number) => (g as any).damageEnemy(e, amount, pid, 0);
+      return { g, e, pool, got: (pid: 'p0' | 'p1') => gold(pid) - before[pid], damage };
+    };
+
+    it('splits by damage dealt plus a bonus for the final blow', () => {
+      const { e, pool, got, damage } = setup();
+      damage('p0', e.maxHp * 0.75);
+      damage('p1', e.maxHp * 5); // overkill must not count
+      expect(e.dead).toBe(true);
+      // No control used: 75 % of the pool by damage (p0 3/4, p1 1/4), 25 % for the final blow (p1).
+      expect(got('p0')).toBeCloseTo(pool * 0.75 * 0.75, 5);
+      expect(got('p1')).toBeCloseTo(pool * 0.75 * 0.25 + pool * 0.25, 5);
+      expect(got('p0') + got('p1')).toBeCloseTo(pool, 5);
+    });
+
+    it('pays slows, stuns and armour reduction even without damage', () => {
+      const { g, e, pool, got, damage } = setup();
+      const control = { dmg: 0, cd: 1, range: 1, atk: 'normal', ground: true, air: true, proj: 'none', projSpeed: 0, slow: 0.4, slowDur: 3 } as const;
+      (g as any).hitEnemy(e, control, 0, 'p0', 0);
+      damage('p1', e.maxHp * 2);
+      expect(got('p0')).toBeCloseTo(pool * 0.15, 5);
+      expect(got('p1')).toBeCloseTo(pool * 0.6 + pool * 0.25, 5);
+    });
+
+    it('refreshing a running slow only counts the extended time', () => {
+      const { g, e } = setup();
+      const control = { dmg: 0, cd: 1, range: 1, atk: 'normal', ground: true, air: true, proj: 'none', projSpeed: 0, slow: 0.4, slowDur: 3 } as const;
+      (g as any).hitEnemy(e, control, 0, 'p0', 0);
+      const first = e.credit.p0.ctl;
+      (g as any).hitEnemy(e, control, 0, 'p1', 0);
+      expect(e.credit.p1).toBeUndefined(); // same strength, no extra time: nothing to credit
+      expect(first).toBeCloseTo(0.4 * 3, 5);
+    });
   });
 
   it('magic towers cannot damage magic immune enemies', () => {
