@@ -25,7 +25,7 @@
     <linearGradient id="topfade" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#050b18" stop-opacity="0.75"/><stop offset="1" stop-color="#050b18" stop-opacity="0"/>
     </linearGradient>
-    <clipPath id="fieldclip"><rect x="0" y="225" width="1000" height="775"/></clipPath>
+    <clipPath id="fieldclip"><rect x="0" y="250" width="1000" height="750"/></clipPath>
     <linearGradient id="imgfade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0a1630"/><stop offset="1" stop-color="#0a1630" stop-opacity="0"/></linearGradient>
     <filter id="blur40" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="40"/></filter>
     <filter id="blur3" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3"/></filter>
@@ -42,7 +42,7 @@
   </g>
   <g id="stars"></g>
   <image href="game-raw.png" x="-750" y="-311" width="2500" height="2500" preserveAspectRatio="none" clip-path="url(#fieldclip)"/>
-  <rect x="0" y="225" width="1000" height="90" fill="url(#imgfade)"/>
+  <rect x="0" y="250" width="1000" height="80" fill="url(#imgfade)"/>
   <g id="scene" display="none"></g>
   <g id="shots" display="none"></g>
   <g id="snow" display="none"></g>
@@ -51,13 +51,9 @@
   <rect x="0" y="640" width="1000" height="360" fill="url(#band)"/>
 
   <g text-anchor="middle">
-    <text x="500" y="150" font-size="118" font-weight="bold" fill="#0a1a38" stroke="#0a1a38" stroke-width="14" stroke-linejoin="round" opacity="0.9">LAN TD</text>
-    <text x="500" y="150" font-size="118" font-weight="bold" fill="url(#gold)" stroke="#7a4a10" stroke-width="2" stroke-linejoin="round" filter="url(#glow)">LAN TD</text>
-    <text x="500" y="204" font-size="31" fill="#dcecff" letter-spacing="1.5" font-style="italic">Kooperatives Maze-Tower-Defense</text>
+    <text x="500" y="190" font-size="200" font-weight="bold" fill="#0a1a38" stroke="#0a1a38" stroke-width="22" stroke-linejoin="round" opacity="0.9">LAN TD</text>
+    <text x="500" y="190" font-size="200" font-weight="bold" fill="url(#gold)" stroke="#7a4a10" stroke-width="2" stroke-linejoin="round" filter="url(#glow)">LAN TD</text>
   </g>
-
-  <text x="170" y="140" font-size="76" fill="#cfeaff" filter="url(#glow)" text-anchor="middle">❄</text>
-  <text x="830" y="140" font-size="76" fill="#cfeaff" filter="url(#glow)" text-anchor="middle">❄</text>
   <g id="chips" class="ui" text-anchor="middle" font-size="25" font-weight="600" fill="#eaf4ff"></g>
 </svg>
 
@@ -226,16 +222,18 @@ for (let i = 0; i < 90; i++) el('circle', { cx: rnd() * 1000, cy: rnd() * 1000, 
 
 // feature chips
 const chips = document.getElementById('chips');
-const feats = [['🌐', 'Online-Räume'], ['🖧', 'LAN-Party'], ['👥', 'Bis zu 16 Spieler'], ['⚔', '40 Wellen & Endlos']];
-const cw = 330, gap = 18, ch = 70;
+const feats = [['🌐', 'Online-Räume'], ['🖧', 'LAN-Party'], ['👥', 'Bis 16 Spieler'], ['⚔', '40 Wellen']];
+const cw = 450, gap = 18, ch = 104;
 feats.forEach(([icon, label], i) => {
-  const x = 500 - cw - gap / 2 + (i % 2) * (cw + gap), y = 790 + Math.floor(i / 2) * (ch + 18);
-  el('rect', { x, y, width: cw, height: ch, rx: 35, fill: '#0b1d3a', 'fill-opacity': 0.9, stroke: '#f2c14e', 'stroke-opacity': 0.85, 'stroke-width': 2.5 }, chips);
-  const t = el('text', { x: x + cw / 2, y: y + 46, 'font-size': 29 }, chips); t.textContent = icon + ' ' + label;
+  const x = 500 - cw - gap / 2 + (i % 2) * (cw + gap), y = 755 + Math.floor(i / 2) * (ch + 18);
+  el('rect', { x, y, width: cw, height: ch, rx: 52, fill: '#0b1d3a', 'fill-opacity': 0.9, stroke: '#f2c14e', 'stroke-opacity': 0.85, 'stroke-width': 2.5 }, chips);
+  const t = el('text', { x: x + cw / 2, y: y + 68, 'font-size': 46 }, chips); t.textContent = icon + ' ' + label;
 });
 </script>
 </body>
 </html>
+
+
 
 
 
