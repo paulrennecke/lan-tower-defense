@@ -7,6 +7,7 @@ Neue Einträge oben unter einer Überschrift `## <Version> – <Datum>` ergänze
 
 - 💰 **Kopfgeld nach Leistung:** Das Gold für besiegte Gegner bekommt nicht mehr jeder gleich, sondern wer etwas beigetragen hat – 60 % nach verursachtem Schaden, 15 % für Verlangsamen, Betäuben und Rüstung senken, 25 % für den Todesstoß. Wer nichts tut, geht leer aus.
 - 🔢 Über dem Gegner steht nur noch dein eigener Anteil.
+- ⚠ Die Lobby zeigt neben der Client- auch die Server-Version und warnt, wenn ein Raum nach einem Update noch auf der älteren Version läuft.
 - 📖 Die Spielregeln (mit allen Zahlen und der neuen Kopfgeld-Verteilung) stehen jetzt auch in der Raumübersicht und in der Lobby – eingeklappt, per Klick aufklappbar.
 
 ## 1.1.0 – 2026-11-16

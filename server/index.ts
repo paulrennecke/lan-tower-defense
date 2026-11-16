@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, statSync, createReadStream } from 'node:fs';
+import { existsSync, mkdirSync, statSync, createReadStream } from 'node:fs';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { networkInterfaces } from 'node:os';
 import { execFileSync } from 'node:child_process';
@@ -9,6 +9,7 @@ import { isRoomCode, type ServerConfig, type ServerMsg } from '../shared/protoco
 import { Room } from './room';
 import { RoomManager } from './rooms';
 import { HighscoreStore, SaveStore } from './store';
+import { VERSION } from './version';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const STATIC_DIR = join(ROOT, 'dist', 'client');
@@ -36,10 +37,6 @@ mkdirSync(DATA_DIR, { recursive: true });
 const highscores = new HighscoreStore(join(DATA_DIR, 'highscore.json'));
 const saves = new SaveStore(SAVE_DIR, ONLINE, ONLINE ? LIMITS.savesPerOwner : Infinity);
 const lanRoom = ONLINE ? null : new Room({ code: null, name: 'LAN', isPublic: false, highscores, saves });
-/** Version of the built client (dist/client/version.json, written by the build). */
-const VERSION: string = (() => {
-  try { return JSON.parse(readFileSync(join(STATIC_DIR, 'version.json'), 'utf8')).version; } catch { return 'dev'; }
-})();
 const rooms = new RoomManager({ highscores, saves, maxRooms: LIMITS.maxRooms, emptyTtl: LIMITS.roomTtlMs, msgRate: LIMITS.msgRate });
 
 // ------------------------------------------------------------------ HTTP

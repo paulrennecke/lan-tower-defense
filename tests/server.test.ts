@@ -16,6 +16,8 @@ describe('server protocol', () => {
     const a = new Client(); await a.open();
     a.send({ t: 'hello', name: 'Alice' });
     const wa = await a.wait('welcome');
+    // The server announces its version so clients can warn when a room runs on an older deployment.
+    expect(typeof wa.version).toBe('string');
     const b = new Client(); await b.open();
     b.send({ t: 'hello', name: 'Bob<script>' });
     const wb = await b.wait('welcome');

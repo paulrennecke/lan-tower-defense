@@ -160,7 +160,7 @@ export type ClientMsg =
   | { t: 'quitGame'; save?: string };
 
 export type ServerMsg =
-  | { t: 'welcome'; you: string; token: string }
+  | { t: 'welcome'; you: string; token: string; /** Version of the server (instance) the room runs on. */ version: string }
   | { t: 'lobby'; players: LobbyPlayer[]; hostId: string | null; phase: GamePhase; highscore: number; saves: SaveInfo[]; map: string; room?: RoomInfo | null }
   | { t: 'game'; state: FullState }
   | Snapshot

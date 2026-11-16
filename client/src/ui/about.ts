@@ -50,3 +50,22 @@ export function bindVersionLink(root: HTMLElement) {
     a.onclick = (e) => { e.preventDefault(); showChangelog(); };
   });
 }
+
+/**
+ * The page (client) and the room (server) can differ after a rolling deployment: rooms that were already running keep
+ * their old server until they are empty. Shows the server version and warns about a mismatch.
+ */
+export function showServerVersion(serverVersion: string) {
+  document.querySelectorAll<HTMLElement>('.version-link').forEach((a) => {
+    let s = a.parentElement?.querySelector<HTMLElement>('.server-version');
+    if (!s) { s = document.createElement('span'); s.className = 'server-version muted'; a.after(s); }
+    s.textContent = ` · Server v${serverVersion}`;
+  });
+  document.querySelector('.version-warn')?.remove();
+  if (serverVersion === APP_VERSION) return;
+  const box = document.createElement('div');
+  box.className = 'version-warn';
+  box.innerHTML = `⚠ Dieser Raum läuft noch auf <b>v${esc(serverVersion)}</b>, deine Seite ist <b>v${esc(APP_VERSION)}</b>. Neueste Änderungen gelten erst in einem neu erstellten Raum. <button>OK</button>`;
+  box.querySelector('button')!.onclick = () => box.remove();
+  document.body.appendChild(box);
+}

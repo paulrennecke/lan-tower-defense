@@ -8,6 +8,7 @@ import { Game, type GameHooks, type GamePlayer } from './game';
 import { setActiveMap } from '../shared/map';
 import { DEFAULT_MAP, MAP_BY_ID } from '../shared/maps';
 import type { HighscoreStore, SaveStore } from './store';
+import { VERSION } from './version';
 
 const TICK = 0.05;
 const SNAP_EVERY = 2;
@@ -203,7 +204,7 @@ export class Room {
     }
     this.entries.clear();
     for (const [k, v] of rekeyed) this.entries.set(k, v);
-    for (const e of this.entries.values()) this.send(e.ws, { t: 'welcome', you: e.id, token: e.token });
+    for (const e of this.entries.values()) this.send(e.ws, { t: 'welcome', you: e.id, token: e.token, version: VERSION });
     this.runGame(g);
     this.sysChat(`Spielstand „${data.info.name}“ geladen (Welle ${g.wave}). Das Spiel ist pausiert – mit P oder ⏸ fortsetzen.`);
     if (free.length) this.sysChat(`Freie Plätze: ${free.map((p) => p.name).join(', ')}. Neue Mitspieler übernehmen sie automatisch.`);
@@ -345,7 +346,7 @@ export class Room {
     }
     this.lastActive = Date.now();
     this.ensureHost();
-    this.send(ws, { t: 'welcome', you: me.id, token: me.token });
+    this.send(ws, { t: 'welcome', you: me.id, token: me.token, version: VERSION });
     this.broadcastLobby();
     if (this.phase !== 'lobby') this.sendGameState(me);
     return me;

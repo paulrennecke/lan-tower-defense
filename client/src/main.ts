@@ -4,6 +4,7 @@ import { Net } from './net';
 import { GameView } from './ui/game';
 import { LobbyUI } from './ui/lobby';
 import { RoomsUI } from './ui/rooms';
+import { showServerVersion } from './ui/about';
 
 const app = document.getElementById('app')!;
 const randomName = () => ['Arthas', 'Thrall', 'Jaina', 'Illidan', 'Sylvanas', 'Uther', 'Rexxar', 'Tyrande', 'Grom', 'Kael', 'Medivh', 'Gazlowe'][Math.floor(Math.random() * 12)] + Math.floor(Math.random() * 100);
@@ -86,6 +87,7 @@ function playRoom(room: string | null) {
       case 'welcome':
         you = msg.you;
         sessionStorage.setItem(tokenKey, msg.token);
+        if (msg.version) showServerVersion(msg.version);
         break;
       case 'noRoom':
         net.stop();
