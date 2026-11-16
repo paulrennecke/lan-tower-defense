@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Game, SELL_REFUND } from '../server/game';
 import { TOWER_BY_ID } from '../shared/data/classes';
 import { FIRST_COUNTDOWN, START_GOLD, START_LIVES, VICTORY_WAVE } from '../shared/data/waves';
@@ -38,6 +38,19 @@ function cellNear(g: Game, pid: string, d: number) {
 }
 
 const run = (g: Game, seconds: number) => { for (let t = 0; t < seconds; t += 0.05) g.tick(0.05); };
+
+describe('Balance', () => {
+  it('bots survive the first waves (balance smoke test)', () => {
+    // Seeded randomness: the result sits close to the threshold and would otherwise be flaky.
+    let seed = 12345;
+    const rnd = vi.spyOn(Math, 'random').mockImplementation(() => (seed = (seed * 16807) % 2147483647) / 2147483647);
+    const r = simulate(2, 8);
+    rnd.mockRestore();
+    setActiveMap('nordend'); // simulate() switches the global map
+    expect(r.wave).toBeGreaterThanOrEqual(8);
+    expect(r.lives).toBeGreaterThan(30);
+  });
+});
 
 describe('Game commands', () => {
   it('validates building', () => {
@@ -226,6 +239,8 @@ describe('Game simulation', () => {
   });
 
   it('invisible enemies need detection', () => {
+    // The random spawn offset can put the shade just out of the tower's range.
+    const rnd = vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const g = mkGame(['human']);
     g.players.get('p0')!.gold = 10000;
     const c = cellNear(g, 'p0', 5);
@@ -238,6 +253,7 @@ describe('Game simulation', () => {
     const shade2 = g.spawnEnemy('shade', 5, 1, laneOf(g, 'p0'));
     run(g, 8);
     expect(shade2.hp).toBeLessThan(shade2.maxHp);
+    rnd.mockRestore();
   });
 
   it('splitting enemies spawn children on death', () => {
@@ -335,12 +351,6 @@ describe('Game simulation', () => {
     const before = g.timer;
     run(g, 2);
     expect(g.timer).toBeLessThan(before);
-  });
-
-  it('bots survive the first waves (balance smoke test)', () => {
-    const r = simulate(2, 8);
-    expect(r.wave).toBeGreaterThanOrEqual(8);
-    expect(r.lives).toBeGreaterThan(30);
   });
 });
 
