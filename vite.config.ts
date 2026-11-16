@@ -7,6 +7,8 @@ const version = process.env.APP_VERSION || `${pkgVersion}-local`;
 
 export default defineConfig({
   root: 'client',
+  // Relative asset URLs so the game also works below a path prefix (paul-rennecke.de/td/).
+  base: './',
   define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [{
     name: 'version-json',

@@ -10,7 +10,7 @@
 # The new release starts on a free slot and becomes "current" for new visitors and new rooms. Instances that still
 # host rooms keep running (and keep serving exactly those rooms) until they are empty; the next deploy stops them.
 #
-# Required env: REMOTE_ROOT SERVICE PORT DOMAIN DATA_DIR RELEASE VERSION
+# Required env: REMOTE_ROOT SERVICE PORT DOMAIN DATA_DIR RELEASE VERSION   Optional: EXTRA_ORIGINS (comma separated)
 set -euo pipefail
 
 SLOTS=4
@@ -49,11 +49,12 @@ NEW_PORT=$(slot_port "$NEW")
 echo "Release $RELEASE ($VERSION) -> Slot $NEW (Port $NEW_PORT), aktuell: ${CURRENT:-keiner}"
 
 # --- start the new instance ------------------------------------------------------------------------------------
+ORIGINS="https://$DOMAIN${EXTRA_ORIGINS:+,$EXTRA_ORIGINS}"
 cat > "$(slot_ini "$NEW")" <<EOF
 [program:$SERVICE-s$NEW]
 directory=$REL
 command=node --import tsx server/index.ts
-environment=NODE_ENV="production",TD_MODE="online",PORT="$NEW_PORT",DATA_DIR="$DATA",TD_ORIGIN="https://$DOMAIN"
+environment=NODE_ENV="production",TD_MODE="online",PORT="$NEW_PORT",DATA_DIR="$DATA",TD_ORIGIN="$ORIGINS"
 autostart=yes
 autorestart=yes
 startsecs=10

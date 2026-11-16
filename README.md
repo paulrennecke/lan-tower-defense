@@ -240,7 +240,8 @@ Einmalige Einrichtung:
 2. Auf dem Uberspace (per SSH): `uberspace tools version use node 22` (die Domains legt der Workflow per `uberspace web domain add` an).
 3. **GitHub → Settings → Secrets and variables → Actions → Secrets:** `SFTP_HOST`, `SFTP_USERNAME`,
    `SFTP_PRIVATE_KEY` (wie beim Adventskalender; der öffentliche Schlüssel muss in `~/.ssh/authorized_keys` stehen).
-   Optional als *Variables*: `TD_REMOTE_ROOT` (`lan-td`), `TD_PORT` (`61235`), `TD_DOMAIN` (`td.rennecke.org`) sowie
+   Optional als *Variables*: `TD_REMOTE_ROOT` (`lan-td`), `TD_PORT` (`61235`), `TD_DOMAIN` (`td.rennecke.org`), `TD_EXTRA_DOMAIN` (`paul-rennecke.de`,
+   dort läuft das Spiel zusätzlich unter `/td/`; die Domain muss auf demselben Uberspace-Account liegen) sowie
    `TD_DEV_REMOTE_ROOT` (`lan-td-dev`), `TD_DEV_PORT` (`61245`), `TD_DEV_DOMAIN` (`dev.td.rennecke.org`). Je Umgebung werden
    der Router-Port und die 4 folgenden Ports belegt.
 4. Workflow per Push oder manuell („Run workflow“) starten.

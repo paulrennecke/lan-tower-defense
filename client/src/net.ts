@@ -13,7 +13,11 @@ export class Net {
 
   connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws${this.room ? `?room=${encodeURIComponent(this.room)}` : ''}`);
+    // Relative to the page, so it also works below a path prefix (e.g. /td/).
+    const url = new URL('ws', location.href);
+    url.protocol = proto + ':';
+    url.search = this.room ? `?room=${encodeURIComponent(this.room)}` : '';
+    const ws = new WebSocket(url);
     this.ws = ws;
     ws.onopen = () => {
       this.connected = true;

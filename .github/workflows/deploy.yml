@@ -101,6 +101,7 @@ jobs:
             echo "REMOTE_ROOT=${{ vars.TD_REMOTE_ROOT || 'lan-td' }}" >> "$GITHUB_ENV"
             echo "PORT=${{ vars.TD_PORT || '61235' }}" >> "$GITHUB_ENV"
             echo "DOMAIN=${{ vars.TD_DOMAIN || 'td.rennecke.org' }}" >> "$GITHUB_ENV"
+            echo "EXTRA_DOMAIN=${{ vars.TD_EXTRA_DOMAIN || 'paul-rennecke.de' }}" >> "$GITHUB_ENV"
             echo "SERVICE=lan-td" >> "$GITHUB_ENV"
             echo "DATA_DIR=lan-td-data" >> "$GITHUB_ENV"
           else
@@ -137,12 +138,18 @@ jobs:
       - name: Rolling deploy
         run: |
           ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" \
-            "REMOTE_ROOT='$REMOTE_ROOT' SERVICE='$SERVICE' PORT='$PORT' DOMAIN='$DOMAIN' DATA_DIR='$DATA_DIR' RELEASE='$RELEASE' VERSION='$VERSION' bash -s" \
+            "REMOTE_ROOT='$REMOTE_ROOT' SERVICE='$SERVICE' PORT='$PORT' DOMAIN='$DOMAIN' DATA_DIR='$DATA_DIR' RELEASE='$RELEASE' VERSION='$VERSION' EXTRA_ORIGINS='${EXTRA_DOMAIN:+https://$EXTRA_DOMAIN,https://www.$EXTRA_DOMAIN}' bash -s" \
             < tools/deploy-remote.sh
 
       - name: Configure web backend
         run: |
           ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "uberspace web domain add $DOMAIN 2>/dev/null || true; uberspace web backend set $DOMAIN --http --port $PORT"
+
+      - name: Configure path on extra domain (prod only)
+        if: matrix.target == 'prod'
+        run: |
+          # https://<extra domain>/td/ -> same service. A missing domain must not fail the deployment.
+          ssh -i ~/.ssh/id_deploy "$USERNAME@$HOST" "uberspace web backend set $EXTRA_DOMAIN/td --http --port $PORT --remove-prefix" || echo "::warning::Could not set backend for $EXTRA_DOMAIN/td"
 
       - name: Smoke test
         run: |
