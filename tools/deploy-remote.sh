@@ -20,6 +20,8 @@ REL="$ROOT/releases/$RELEASE"
 SVC_DIR="$HOME/etc/services.d"
 mkdir -p "$SVC_DIR" "$DATA" "$ROOT/releases"
 [ -d "$REL" ] || { echo "Release $REL fehlt"; exit 1; }
+# Artifact upload/download drops file modes – restore the executable bit of native binaries (esbuild for tsx).
+find "$REL/node_modules" -type f \( -path '*/bin/*' -o -name '*.node' \) -exec chmod u+x {} + 2>/dev/null || true
 
 slot_port() { echo $((PORT + 1 + $1)); }
 slot_ini() { echo "$SVC_DIR/$SERVICE-s$1.ini"; }
