@@ -243,6 +243,8 @@ button > kbd { margin-left: auto; }
 .build-btn:has(> kbd) { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; }
 .build-btn > kbd { margin: 0; }
 .sel-panel .actions button { position: relative; }
+.sel-panel .actions.three { grid-template-rows: repeat(3, 44px); gap: 5px; }
+.sel-panel .actions.three button { height: 44px; gap: 0; }
 .sel-panel .actions button > kbd { position: absolute; top: 4px; right: 4px; margin: 0; }
 .sel-panel .actions button:has(> kbd) { display: flex; justify-content: center; }
 .game-menu button:has(> kbd) { justify-content: space-between; }

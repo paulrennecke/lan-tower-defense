@@ -368,7 +368,7 @@ export class GameView {
       <p style="text-align:center;font-size:18px;margin:4px">${msg.victory ? `Ihr habt alle ${VICTORY_WAVE} Wellen besiegt und im Endlos-Modus bis Welle <b>${msg.wave}</b> durchgehalten!` : `Das Tor ist gefallen. Überstanden: <b>${msg.wave}</b> Wellen.`}</p>
       <p style="text-align:center" class="${msg.newRecord ? 'gold' : 'muted'}">${msg.newRecord ? '🎉 Neuer Rekord' : '🏆 Rekord'} auf „${esc(mapName)}“: Welle ${msg.highscore}</p>
       <div class="tiles">
-        ${tile('⏱', 'Spielzeit', time)}${tile('🗺', 'Karte', esc(mapName))}${tile('👥', 'Spieler', String(sm.players))}${tile('❤', 'Leben übrig / verloren', `${sm.livesLeft} / ${sm.livesLost}`)}
+        ${tile('⏱', 'Spielzeit', time)}${msg.victory ? tile('🗺', 'Karte', esc(mapName)) : ''}${tile('👥', 'Spieler', String(sm.players))}${msg.victory ? tile('❤', 'Leben übrig / verloren', `${sm.livesLeft} / ${sm.livesLost}`) : ''}
         ${tile('☠', 'Gegner besiegt', fmt(sm.creepsKilled))}${tile('👑', 'Bosse besiegt', String(sm.bossesKilled))}${tile('💥', 'Gesamtschaden', fmt(sm.totalDamage))}${tile('🏗', 'Türme gebaut / stehen', `${sm.towersBuilt} / ${sm.towersAlive}`)}${tile('🧱', 'Mauern gebaut / stehen', `${sm.wallsBuilt ?? 0} / ${sm.wallsAlive ?? 0}`)}
       </div>
       <div class="muted" style="font-size:13px;margin:8px 0">
@@ -615,7 +615,7 @@ export class GameView {
         <div class="stats" style="grid-template-columns:1fr">${[...byDef].map(([d, n]) => `<div><span class="muted">${n}×</span> ${esc(TOWER_BY_ID[d].name)}</div>`).join('')}</div>
         <div class="muted" style="margin-top:4px">Kills: ${kills} · Schaden: ${fmt(damage)}</div>
       </div>
-      <div class="actions">
+      <div class="actions three">
         <button class="primary up" ${towers.some((t) => this.canAffordUpgrade(t.info)) ? '' : 'disabled'}><span>⬆ Alle aufwerten</span><small>${upgradable ? `${upgradable}× · ${gold} 💰${lumber ? ` ${lumber} 🌲` : ''}` : 'Alle auf Max.'}</small><kbd>U</kbd></button>
         <button class="sell"><span>Alle verkaufen</span><small>${towers.length}× · +${refund} 💰</small><kbd>Entf</kbd></button>
         <button class="clear"><span>Auswahl aufheben</span><small>&nbsp;</small><kbd>Esc</kbd></button>
