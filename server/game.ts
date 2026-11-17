@@ -26,6 +26,7 @@ export interface GamePlayer {
   kills: number;
   damage: number;
   towersBuilt: number;
+  wallsBuilt: number;
   upgrades: number;
   goldEarned: number;
   goldSent: number;
@@ -154,13 +155,15 @@ export class Game {
   flow: Float32Array = computeFlow(this.blocked);
   private spawnQueue: { at: number; enemy: string; hpMul: number; wave: number; lane: number }[] = [];
   private fx: Fx[] = [];
+  /** Damage dealt since the last snapshot, per enemy and player – sent as floating numbers. */
+  private dmgAcc = new Map<string, { e: Enemy; owner: string; amount: number }>();
   private nextId = 1;
   private towersDirty = true;
 
   constructor(players: { id: string; name: string; color: number; classId: string }[], private hooks: GameHooks = {}) {
     for (const p of players) {
       this.players.set(p.id, {
-        ...p, gold: START_GOLD, lumber: START_LUMBER, kills: 0, damage: 0, towersBuilt: 0, upgrades: 0, goldEarned: 0, goldSent: 0,
+        ...p, gold: START_GOLD, lumber: START_LUMBER, kills: 0, damage: 0, towersBuilt: 0, wallsBuilt: 0, upgrades: 0, goldEarned: 0, goldSent: 0,
         ready: false, connected: true, research: {},
       });
     }
@@ -184,7 +187,7 @@ export class Game {
     const avg = (key: 'gold' | 'lumber') => (others.length ? Math.round(others.reduce((sum, o) => sum + o[key], 0) / others.length) : 0);
     const player: GamePlayer = {
       ...p, gold: Math.max(START_GOLD, avg('gold')), lumber: Math.max(START_LUMBER, avg('lumber')), kills: 0, damage: 0,
-      towersBuilt: 0, upgrades: 0, goldEarned: 0, goldSent: 0, ready: false, connected: true, research: {},
+      towersBuilt: 0, wallsBuilt: 0, upgrades: 0, goldEarned: 0, goldSent: 0, ready: false, connected: true, research: {},
     };
     this.players.set(p.id, player);
     return player;
@@ -252,7 +255,8 @@ export class Game {
     this.occupancy.set(cellIndex(cx, cy), t.id);
     this.blocked[cellIndex(cx, cy)] = 1;
     this.flow = flow;
-    p.towersBuilt++;
+    // Saves from before walls were counted separately have no wallsBuilt.
+    if (def.shape === 'block') p.wallsBuilt = (p.wallsBuilt ?? 0) + 1; else p.towersBuilt++;
     this.towersDirty = true;
     this.hooks.tower?.(this.towerInfo(t));
     return null;
@@ -679,6 +683,11 @@ export class Game {
     if (p) p.damage += dealt;
     if (t) t.damage += dealt;
     if (dealt > 0) this.credit(e, owner).dmg += dealt;
+    if (dealt >= 0.5 && p) {
+      const key = `${e.id}|${owner}`;
+      const acc = this.dmgAcc.get(key);
+      if (acc) acc.amount += dealt; else this.dmgAcc.set(key, { e, owner, amount: dealt });
+    }
     if (e.hp <= 0) this.kill(e, owner, towerId);
   }
 
@@ -821,9 +830,12 @@ export class Game {
       if (e.armorRedUntil > now) flags |= EF_ARMORRED;
       return [e.id, e.typeIdx, Math.round(e.x * 100) / 100, Math.round(e.y * 100) / 100, Math.ceil(e.hp), e.maxHp, flags];
     });
+    for (const { e, owner, amount } of [...this.dmgAcc.values()].slice(0, 40)) {
+      this.fx.push(['d', Math.round(e.x * 10) / 10, Math.round(e.y * 10) / 10, Math.round(amount), owner]);
+    }
+    this.dmgAcc.clear();
     const fx = this.fx;
     this.fx = [];
-    // Kill stats are refreshed on towers lazily via snapshot consumers; tower kill counts are in tower events.
     return {
       t: 'snap', time: Math.round(now * 1000) / 1000, wave: this.wave, timer: this.timer < 0 ? -1 : Math.max(0, this.timer),
       lives: this.lives, paused: this.paused, enemies, players: this.playerStats(), fx,
@@ -926,12 +938,13 @@ export class Game {
     return {
       stats: players.map((p) => ({
         id: p.id, name: p.name, color: p.color, classId: p.classId, kills: p.kills, damage: Math.round(p.damage),
-        towersBuilt: p.towersBuilt, upgrades: p.upgrades, goldEarned: Math.round(p.goldEarned), goldSent: p.goldSent,
+        towersBuilt: p.towersBuilt, wallsBuilt: p.wallsBuilt ?? 0, upgrades: p.upgrades, goldEarned: Math.round(p.goldEarned), goldSent: p.goldSent,
       })),
       summary: {
         map: this.mapId, players: players.length, time: Math.round(this.time), livesLeft: this.lives, livesLost: this.livesLost,
         creepsKilled: this.creepsKilled, bossesKilled: this.bossesKilled, totalDamage: Math.round(players.reduce((s, p) => s + p.damage, 0)),
-        towersBuilt: players.reduce((s, p) => s + p.towersBuilt, 0), towersAlive: this.towers.size,
+        towersBuilt: players.reduce((s, p) => s + p.towersBuilt, 0), towersAlive: [...this.towers.values()].filter((t) => TOWER_BY_ID[t.def].shape !== 'block').length,
+        wallsBuilt: players.reduce((s, p) => s + (p.wallsBuilt ?? 0), 0), wallsAlive: [...this.towers.values()].filter((t) => TOWER_BY_ID[t.def].shape === 'block').length,
         topTower: best ? { def: best.def, owner: this.players.get(best.owner)?.name ?? '?', kills: best.kills, damage: Math.round(best.damage), level: best.level } : null,
         topKilled: top(this.killsByType), topLeaked: top(this.leaksByType),
       },

@@ -11,6 +11,8 @@ import type { HighscoreStore, SaveStore } from './store';
 import { VERSION } from './version';
 
 const TICK = 0.05;
+/** Upper bound for the cells / towers of one batch message. */
+const MAX_BATCH = 300;
 const SNAP_EVERY = 2;
 
 interface Entry extends LobbyPlayer { token: string; ws: WebSocket | null; leftAt: number; owner: string | null }
@@ -437,6 +439,25 @@ export class Room {
         break;
       case 'sell':
         if (game && !paused()) err(game.sell(p.id, Number(msg.id)));
+        break;
+      case 'sellMany':
+        if (game && !paused() && Array.isArray(msg.ids)) {
+          let sold = 0, first: string | null = null;
+          for (const id of msg.ids.slice(0, MAX_BATCH)) { const e = game.sell(p.id, Number(id)); if (e) first ??= e; else sold++; }
+          if (!sold) err(first);
+        }
+        break;
+      case 'buildMany':
+        if (game && !paused() && Array.isArray(msg.cells)) {
+          let built = 0, first: string | null = null;
+          for (const c of msg.cells.slice(0, MAX_BATCH)) {
+            if (!Array.isArray(c)) continue;
+            const e = game.build(p.id, String(msg.def), Math.floor(Number(c[0])), Math.floor(Number(c[1])));
+            if (e) first ??= e; else built++;
+          }
+          // A drag over occupied cells is normal – only complain when nothing could be built.
+          if (!built) err(first);
+        }
         break;
       case 'mode':
         if (game && ['first', 'last', 'strong', 'weak', 'close'].includes(msg.mode)) err(game.setMode(p.id, Number(msg.id), msg.mode as TargetMode));

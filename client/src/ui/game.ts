@@ -44,6 +44,8 @@ export class GameView {
   /** Several towers chosen with a selection box (empty unless selected.kind === 'multi'). */
   private multi: number[] = [];
   private boxDrag: { x: number; y: number; add: boolean; moved: boolean } | null = null;
+  /** Cells already tried during the current build drag (button held while building). */
+  private buildDrag: { last: { cx: number; cy: number }; seen: Set<number> } | null = null;
   private dimKey = '';
   private lastUpgradeKey = '';
   private hover: { cx: number; cy: number; x: number; y: number } | null = null;
@@ -360,21 +362,21 @@ export class GameView {
     const tower = sm.topTower ? `${esc(TOWER_BY_ID[sm.topTower.def]?.levelNames[sm.topTower.level] ?? sm.topTower.def)} von ${esc(sm.topTower.owner)} (${fmt(sm.topTower.damage)} Schaden, ${sm.topTower.kills} Kills)` : '–';
     const list = (l: [string, number][]) => (l.length ? l.map(([id, n]) => `${esc(ENEMY_BY_ID[id]?.name ?? id)} (${n}×)`).join(', ') : '–');
     const rows = [...msg.stats].sort((a, b) => b.damage - a.damage).map((s, i) => `
-      <tr><td>${i + 1}.</td><td><span class="dot" style="background:${hex(s.color)}"></span>${esc(s.name)} <span class="muted">${CLASS_ICONS[s.classId] ?? ''}</span></td><td>${s.kills}</td><td>${fmt(s.damage)}</td><td>${s.towersBuilt}</td><td>${s.upgrades}</td><td>${fmt(s.goldEarned)}</td><td>${s.goldSent ? fmt(s.goldSent) : '–'}</td></tr>`).join('');
+      <tr><td>${i + 1}.</td><td><span class="dot" style="background:${hex(s.color)}"></span>${esc(s.name)} <span class="muted">${CLASS_ICONS[s.classId] ?? ''}</span></td><td>${s.kills}</td><td>${fmt(s.damage)}</td><td>${s.towersBuilt}</td><td>${s.wallsBuilt ?? 0}</td><td>${s.upgrades}</td><td>${fmt(s.goldEarned)}</td><td>${s.goldSent ? fmt(s.goldSent) : '–'}</td></tr>`).join('');
     o.querySelector('.panel')!.innerHTML = `
       <h1 style="text-align:center;margin:4px 0">${msg.victory ? '🏆 Ruhmreicher Kampf!' : '💀 Niederlage'}</h1>
       <p style="text-align:center;font-size:18px;margin:4px">${msg.victory ? `Ihr habt alle ${VICTORY_WAVE} Wellen besiegt und im Endlos-Modus bis Welle <b>${msg.wave}</b> durchgehalten!` : `Das Tor ist gefallen. Überstanden: <b>${msg.wave}</b> Wellen.`}</p>
       <p style="text-align:center" class="${msg.newRecord ? 'gold' : 'muted'}">${msg.newRecord ? '🎉 Neuer Rekord' : '🏆 Rekord'} auf „${esc(mapName)}“: Welle ${msg.highscore}</p>
       <div class="tiles">
         ${tile('⏱', 'Spielzeit', time)}${tile('🗺', 'Karte', esc(mapName))}${tile('👥', 'Spieler', String(sm.players))}${tile('❤', 'Leben übrig / verloren', `${sm.livesLeft} / ${sm.livesLost}`)}
-        ${tile('☠', 'Gegner besiegt', fmt(sm.creepsKilled))}${tile('👑', 'Bosse besiegt', String(sm.bossesKilled))}${tile('💥', 'Gesamtschaden', fmt(sm.totalDamage))}${tile('🏗', 'Türme gebaut / stehen', `${sm.towersBuilt} / ${sm.towersAlive}`)}
+        ${tile('☠', 'Gegner besiegt', fmt(sm.creepsKilled))}${tile('👑', 'Bosse besiegt', String(sm.bossesKilled))}${tile('💥', 'Gesamtschaden', fmt(sm.totalDamage))}${tile('🏗', 'Türme gebaut / stehen', `${sm.towersBuilt} / ${sm.towersAlive}`)}${tile('🧱', 'Mauern gebaut / stehen', `${sm.wallsBuilt ?? 0} / ${sm.wallsAlive ?? 0}`)}
       </div>
       <div class="muted" style="font-size:13px;margin:8px 0">
         <div>⭐ Stärkster Turm: <b>${tower}</b></div>
         <div>☠ Am häufigsten besiegt: ${list(sm.topKilled)}</div>
         <div>🚪 Am häufigsten durchgekommen: ${list(sm.topLeaked)}</div>
       </div>
-      <table class="scoreboard" style="width:100%"><tr><th>#</th><th>Spieler</th><th>Kills</th><th>Schaden</th><th>Türme</th><th>Upgrades</th><th>Gold verdient</th><th>Gold gesendet</th></tr>${rows}</table>
+      <table class="scoreboard" style="width:100%"><tr><th>#</th><th>Spieler</th><th>Kills</th><th>Schaden</th><th>Türme</th><th>Mauern</th><th>Upgrades</th><th>Gold verdient</th><th>Gold gesendet</th></tr>${rows}</table>
       <div style="text-align:center;margin-top:12px">${isHost ? '<button class="primary back">Zurück zur Lobby</button>' : '<span class="muted">Warte auf den Host…</span>'}</div>`;
     o.querySelector<HTMLButtonElement>('.back')?.addEventListener('click', () => this.net.send({ t: 'backToLobby' }));
     o.classList.remove('hidden');
@@ -413,9 +415,9 @@ export class GameView {
       this.hintKey = mode;
       const move: [string, string][] = [['←↑↓→', 'Cursor bewegen'], ['⇧ + ←↑↓→', '5 Felder weit']];
       const rows: [string, string][] = mode === 'build'
-        ? [...move, ['Enter / Leertaste', 'Turm bauen'], ['Esc', 'Bau beenden']]
+        ? [...move, ['Enter / Leertaste', 'Turm bauen'], ['Maus ziehen', 'Mehrere bauen'], ['Esc', 'Bau beenden']]
         : mode === 'multi'
-          ? [...move, ['U', 'Alle aufwerten'], ['C', 'Zielmodus wechseln'], ['Esc', 'Auswahl aufheben']]
+          ? [...move, ['U', 'Alle aufwerten'], ['V / Entf', 'Alle verkaufen'], ['C', 'Zielmodus wechseln'], ['Esc', 'Auswahl aufheben']]
           : mode === 'tower'
             ? [...move, ['U', 'Aufwerten'], ['V / Entf', 'Verkaufen'], ['C', 'Zielmodus wechseln'], ['Esc', 'Auswahl aufheben']]
             : [...move, ['Q / E', 'Vorheriger / nächster Turm'], ['Ziehen', 'Mehrere Türme mit der Maus wählen']];
@@ -484,7 +486,11 @@ export class GameView {
     const o = this.q('.o-score');
     if (o.classList.contains('hidden')) return;
     const towerCount = new Map<string, number>();
-    for (const t of this.ent.towers.values()) towerCount.set(t.info.owner, (towerCount.get(t.info.owner) ?? 0) + 1);
+    const wallCount = new Map<string, number>();
+    for (const t of this.ent.towers.values()) {
+      const m = TOWER_BY_ID[t.info.def].shape === 'block' ? wallCount : towerCount;
+      m.set(t.info.owner, (m.get(t.info.owner) ?? 0) + 1);
+    }
     const rows = [...this.players.values()].sort((a, b) => b.damage - a.damage).map((p) => {
       const cls = p.classId ? CLASS_BY_ID[p.classId] : undefined;
       const research = cls ? cls.research.map((r) => {
@@ -497,13 +503,13 @@ export class GameView {
       <tr style="opacity:${p.connected ? 1 : 0.5}">
         <td><span class="dot" style="background:${hex(p.color)}"></span>${esc(p.name)}${p.id === this.you ? ' (du)' : ''}</td>
         <td>${cls ? CLASS_ICONS[cls.id] + ' ' + esc(cls.name) : ''}</td>
-        <td>${towerCount.get(p.id) ?? 0}</td><td>${p.kills}</td><td>${fmt(p.damage)}</td><td class="gold">${fmt(p.gold)}</td><td class="gold">${fmt(p.goldEarned)}</td><td>${p.lumber}</td>
+        <td>${towerCount.get(p.id) ?? 0}</td><td>${wallCount.get(p.id) ?? 0}</td><td>${p.kills}</td><td>${fmt(p.damage)}</td><td class="gold">${fmt(p.gold)}</td><td class="gold">${fmt(p.goldEarned)}</td><td>${p.lumber}</td>
         <td><div>${done}/${total}</div><div class="research-prog">${research}</div></td>
         <td>${p.ready ? '✔' : ''}${p.connected ? '' : ' ⚠ getrennt'}</td>
       </tr>`;
     }).join('');
     o.querySelector('.panel')!.innerHTML = `<h2 style="margin-top:0">📊 Punktestand – Welle ${this.wave}</h2>
-      <table><tr><th>Spieler</th><th>Klasse</th><th>Türme</th><th>Kills</th><th>Schaden</th><th>Gold</th><th>Insg. verdient</th><th>Holz</th><th>Forschung</th><th></th></tr>${rows}</table>`;
+      <table><tr><th>Spieler</th><th>Klasse</th><th>Türme</th><th>Mauern</th><th>Kills</th><th>Schaden</th><th>Gold</th><th>Insg. verdient</th><th>Holz</th><th>Forschung</th><th></th></tr>${rows}</table>`;
   }
 
   private toggleReady() {
@@ -565,6 +571,17 @@ export class GameView {
     for (const t of this.multiTowers()) if (this.upgradeInfo(t.info)) this.net.send({ t: 'upgrade', id: t.info.id });
   }
 
+  /** Sells the whole selection with one message (so a big group cannot hit the message rate limit). */
+  private sellAll() {
+    // Right after an upgrade the panel is redrawn – ignore a click for a moment so a double click cannot sell everything.
+    if (performance.now() - this.lastUpgradeAt < 900) return;
+    const towers = this.multiTowers();
+    if (!towers.length) return;
+    const refund = towers.reduce((s, t) => s + Math.floor(t.info.invested * SELL_REFUND), 0);
+    if (towers.length >= 8 && !window.confirm(`${towers.length} Türme/Mauern für ${refund} Gold verkaufen?`)) return;
+    this.net.send({ t: 'sellMany', ids: towers.map((t) => t.info.id) });
+  }
+
   private nextMode(cur: TargetMode | undefined): TargetMode {
     const modes = Object.keys(TARGET_MODE_NAMES) as TargetMode[];
     return modes[(Math.max(0, modes.indexOf(cur ?? modes[modes.length - 1])) + 1) % modes.length];
@@ -578,30 +595,35 @@ export class GameView {
     const towers = this.multiTowers();
     if (towers.length < 2) { this.selectTowers(towers.map((t) => t.info.id)); return; }
     const byDef = new Map<string, number>();
-    let gold = 0, lumber = 0, upgradable = 0, kills = 0, damage = 0;
+    let gold = 0, lumber = 0, upgradable = 0, kills = 0, damage = 0, refund = 0, walls = 0;
     for (const t of towers) {
       byDef.set(t.info.def, (byDef.get(t.info.def) ?? 0) + 1);
       const up = this.upgradeInfo(t.info);
       if (up) { gold += up.gold; lumber += up.lumber; upgradable++; }
       kills += t.info.kills; damage += t.info.damage;
+      refund += Math.floor(t.info.invested * SELL_REFUND);
+      if (TOWER_BY_ID[t.info.def].shape === 'block') walls++;
     }
+    const title = [towers.length - walls ? `${towers.length - walls} ${towers.length - walls === 1 ? 'Turm' : 'Türme'}` : '', walls ? `${walls} ${walls === 1 ? 'Mauer' : 'Mauern'}` : ''].filter(Boolean).join(' und ');
     const shooters = towers.filter((t) => effectiveStats(t.info.def, t.info.level, this.players.get(t.info.owner)?.research ?? {}, { dmg: 0, speed: 0 }).dmg > 0);
     const modes = new Set(shooters.map((t) => t.info.mode));
     const cur = modes.size === 1 ? [...modes][0] : null;
     panel.innerHTML = `
       <div class="portrait">🗂</div>
       <div class="info">
-        <h3>${towers.length} Türme ausgewählt</h3>
+        <h3>${title} ausgewählt</h3>
         <div class="stats" style="grid-template-columns:1fr">${[...byDef].map(([d, n]) => `<div><span class="muted">${n}×</span> ${esc(TOWER_BY_ID[d].name)}</div>`).join('')}</div>
         <div class="muted" style="margin-top:4px">Kills: ${kills} · Schaden: ${fmt(damage)}</div>
       </div>
       <div class="actions">
         <button class="primary up" ${towers.some((t) => this.canAffordUpgrade(t.info)) ? '' : 'disabled'}><span>⬆ Alle aufwerten</span><small>${upgradable ? `${upgradable}× · ${gold} 💰${lumber ? ` ${lumber} 🌲` : ''}` : 'Alle auf Max.'}</small><kbd>U</kbd></button>
+        <button class="sell"><span>Alle verkaufen</span><small>${towers.length}× · +${refund} 💰</small><kbd>Entf</kbd></button>
         <button class="clear"><span>Auswahl aufheben</span><small>&nbsp;</small><kbd>Esc</kbd></button>
       </div>
       ${shooters.length ? `<div class="modes">${(Object.keys(TARGET_MODE_NAMES) as TargetMode[]).map((m) => `<button data-mode="${m}" class="${cur === m ? 'active' : ''}">${TARGET_MODE_NAMES[m]}</button>`).join('')}</div>` : ''}`;
     const upBtn = panel.querySelector<HTMLButtonElement>('.up')!;
     upBtn.onclick = () => this.upgradeAll();
+    panel.querySelector<HTMLButtonElement>('.sell')!.onclick = () => this.sellAll();
     panel.querySelector<HTMLButtonElement>('.clear')!.onclick = () => this.select(null);
     panel.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) => { b.onclick = () => this.setModeAll(b.dataset.mode as TargetMode); });
     this.world.rangeRing.visible = false;
@@ -696,16 +718,20 @@ export class GameView {
     canvas.addEventListener('mousemove', (e) => {
       this.hover = this.world.pickGround(e.clientX, e.clientY);
       this.updateHoverVisuals();
+      // Building with the button held down: every cell the mouse passes is built, too.
+      if (this.buildDrag && this.buildDef && this.hover && e.buttons & 1) this.dragBuild(this.hover);
+      else if (this.buildDrag && !(e.buttons & 1)) this.buildDrag = null;
     });
     canvas.addEventListener('mousedown', (e) => {
       if (!this.active) return;
-      if (e.button === 2) { this.buildDef = null; this.updateBuildButtons(); this.updateHoverVisuals(); return; }
+      if (e.button === 2) { this.buildDef = null; this.buildDrag = null; this.updateBuildButtons(); this.updateHoverVisuals(); return; }
       if (e.button !== 0) return;
       const g = this.world.pickGround(e.clientX, e.clientY);
       if (e.altKey && g) { this.net.send({ t: 'ping', x: g.x, y: g.y }); return; }
       // The tower type stays selected after building, so several towers can be placed in a row (Esc / right click ends it).
       if (this.buildDef && g) {
         this.net.send({ t: 'build', def: this.buildDef.id, cx: g.cx, cy: g.cy });
+        this.buildDrag = { last: { cx: g.cx, cy: g.cy }, seen: new Set([g.cy * MAP_W + g.cx]) };
         this.hover = g;
         this.updateHoverVisuals();
         return;
@@ -727,6 +753,7 @@ export class GameView {
       }
     });
     window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.buildDrag = null;
       const d = this.boxDrag;
       this.boxDrag = null;
       if (!d || e.button !== 0) return;
@@ -797,6 +824,7 @@ export class GameView {
       const multi = this.selected?.kind === 'multi';
       if (key === 'u' && multi) this.upgradeAll();
       else if (key === 'u' && sel && this.canUse(sel.info)) { this.lastUpgradeAt = performance.now(); this.net.send({ t: 'upgrade', id: sel.info.id }); }
+      else if ((key === 'v' || e.key === 'Delete') && multi) this.sellAll();
       else if ((key === 'v' || e.key === 'Delete') && sel && this.canUse(sel.info)) this.net.send({ t: 'sell', id: sel.info.id });
       else if (key === 'c' && multi) this.setModeAll(this.nextMode(this.multiTowers()[0]?.info.mode));
       else if (key === 'c' && sel && this.canUse(sel.info)) this.net.send({ t: 'mode', id: sel.info.id, mode: this.nextMode(sel.info.mode) });
@@ -916,6 +944,25 @@ export class GameView {
     this.world.focus(next.info.cx + 0.5, next.info.cy + 0.5);
     this.updateBuildButtons();
     this.select({ kind: 'tower', id: next.info.id });
+  }
+
+  /** Builds along the mouse path while the button is held: all cells between the last and the current one, each only once. */
+  private dragBuild(to: { cx: number; cy: number }) {
+    const d = this.buildDrag, def = this.buildDef;
+    if (!d || !def || (to.cx === d.last.cx && to.cy === d.last.cy)) return;
+    const cells: [number, number][] = [];
+    let x = d.last.cx, y = d.last.cy;
+    const dx = Math.abs(to.cx - x), dy = Math.abs(to.cy - y), sx = x < to.cx ? 1 : -1, sy = y < to.cy ? 1 : -1;
+    let err = dx - dy;
+    while (x !== to.cx || y !== to.cy) {
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x += sx; }
+      if (e2 < dx) { err += dx; y += sy; }
+      const key = y * MAP_W + x;
+      if (!d.seen.has(key)) { d.seen.add(key); cells.push([x, y]); }
+    }
+    d.last = { cx: to.cx, cy: to.cy };
+    if (cells.length) this.net.send({ t: 'buildMany', def: def.id, cells });
   }
 
   private placeAtCursor(keepMode: boolean) {

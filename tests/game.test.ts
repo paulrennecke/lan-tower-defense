@@ -121,6 +121,18 @@ describe('Game commands', () => {
     const c = cellNear(g, 'late', 8);
     expect(g.build('late', 'o_spear', c.cx, c.cy)).toBeNull();
   });
+  it('counts walls and towers separately in the end statistics', () => {
+    const g = mkGame(['human']);
+    g.players.get('p0')!.gold = 10000;
+    const a = cellNear(g, 'p0', 5), b = cellNear(g, 'p0', 12);
+    expect(g.build('p0', 'h_watch', a.cx, a.cy)).toBeNull();
+    expect(g.build('p0', 'h_block', b.cx, b.cy)).toBeNull();
+    const { stats, summary } = g.endStats();
+    expect(stats[0].towersBuilt).toBe(1);
+    expect(stats[0].wallsBuilt).toBe(1);
+    expect([summary.towersAlive, summary.wallsAlive]).toEqual([1, 1]);
+  });
+
   it('upgrades and sells with refund', () => {
     const g = mkGame(['human']);
     const c = cellNear(g, 'p0', 10);

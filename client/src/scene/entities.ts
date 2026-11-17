@@ -256,6 +256,13 @@ export class Entities {
         this.onKillGold?.(mine);
         break;
       }
+      case 'd': {
+        // Damage numbers in the colour of the player who caused them.
+        const [, x, y, amount, owner] = f;
+        const css = '#' + this.colorOf(owner).toString(16).padStart(6, '0');
+        this.fx.text(toWorld(x + (Math.random() - 0.5) * 0.8, y, 1.4), String(amount), css, 0.6);
+        break;
+      }
       case 'h': {
         const e = this.enemies.get(f[1]);
         if (e) this.fx.ring(e.root.position, 0x60ff60, 1.5, 0.5);

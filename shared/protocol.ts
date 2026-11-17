@@ -59,6 +59,7 @@ export type Fx =
   | ['m', number, number, number]            // mine placed: id, x, y
   | ['mx', number]                           // mine removed
   | ['k', number, number, number, [string, number][]] // kill: x, y, total gold, gold per player
+  | ['d', number, number, number, string]    // damage dealt: x, y, amount, player id
   | ['l', number]                            // leak: enemyId
   | ['h', number]                            // heal: enemyId
   | ['a', number];                           // tower attack anim (no projectile): towerId
@@ -107,6 +108,7 @@ export interface PlayerEndStats {
   kills: number;
   damage: number;
   towersBuilt: number;
+  wallsBuilt: number;
   upgrades: number;
   goldEarned: number;
   goldSent: number;
@@ -124,6 +126,8 @@ export interface GameSummary {
   totalDamage: number;
   towersBuilt: number;
   towersAlive: number;
+  wallsBuilt: number;
+  wallsAlive: number;
   /** Tower that dealt the most damage. */
   topTower: { def: string; owner: string; kills: number; damage: number; level: number } | null;
   /** Creep types that were killed / leaked most (id, count), top entries. */
@@ -147,6 +151,10 @@ export type ClientMsg =
   | { t: 'build'; def: string; cx: number; cy: number }
   | { t: 'upgrade'; id: number }
   | { t: 'sell'; id: number }
+  /** Several towers/walls at once (selection sell). */
+  | { t: 'sellMany'; ids: number[] }
+  /** Several cells at once with the same tower type (drag building). */
+  | { t: 'buildMany'; def: string; cells: [number, number][] }
   | { t: 'mode'; id: number; mode: TargetMode }
   | { t: 'research'; id: string }
   | { t: 'callWave'; ready: boolean }

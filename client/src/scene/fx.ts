@@ -172,7 +172,7 @@ export class FxManager {
   }
 
   /** Floating text label (gold, damage, etc.). */
-  text(pos: THREE.Vector3, text: string, color = '#ffd84a') {
+  text(pos: THREE.Vector3, text: string, color = '#ffd84a', size = 1) {
     const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 48;
     const ctx = canvas.getContext('2d')!;
@@ -186,7 +186,7 @@ export class FxManager {
     const tex = new THREE.CanvasTexture(canvas);
     const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
     const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(2.4, 0.9, 1);
+    sprite.scale.set(2.4 * size, 0.9 * size, 1);
     sprite.position.copy(pos);
     sprite.renderOrder = 10;
     this.scene.add(sprite);

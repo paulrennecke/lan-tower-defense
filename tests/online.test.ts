@@ -96,6 +96,22 @@ describe('online mode', () => {
     expect(info.public).toBe(false);
   });
 
+  it('builds and sells several walls with one message', async () => {
+    const { c: a } = await joinRoom(await createRoom('Mauern'), 'Alice', OWNER_A);
+    await a.wait('lobby');
+    a.send({ t: 'setClass', classId: 'human' });
+    a.send({ t: 'start' });
+    await a.wait('game');
+    const { cx, cy } = buildCell('x9');
+    a.send({ t: 'buildMany', def: 'h_block', cells: [[cx, cy], [cx + 1, cy], [cx + 2, cy]] });
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) ids.push((await a.wait('tower', (m) => !ids.includes(m.tower.id))).tower.id);
+    a.send({ t: 'sellMany', ids });
+    const gone: number[] = [];
+    for (let i = 0; i < 3; i++) gone.push((await a.wait('towerGone', (m) => !gone.includes(m.id))).id);
+    expect(gone.sort()).toEqual([...ids].sort());
+  }, 20000);
+
   it('runs two rooms with different maps at the same time and keeps saves per owner', async () => {
     const r1 = await createRoom('Raum Eins');
     const r2 = await createRoom('Raum Zwei');

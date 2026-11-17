@@ -82,6 +82,20 @@ export class LobbyUI {
           </details>
         </div>
         <div>
+          <div class="panel invite-lan" style="margin-bottom:16px;font-size:13px">
+            <b class="gold">Mitspieler einladen:</b> Andere Rechner im selben Netzwerk öffnen
+            <div style="font-size:16px;margin:4px 0"><code>${esc(location.host)}</code></div>
+            <span class="muted">(Statt "localhost" die LAN-IP verwenden, die der Server beim Start anzeigt.)</span>
+          </div>
+          <div class="panel invite-online hidden" style="margin-bottom:16px;font-size:13px">
+            <b class="gold">Mitspieler einladen:</b> <span class="room-title"></span>
+            <div class="row" style="margin:6px 0">
+              <span class="room-code"></span>
+              <button class="copy-link" style="margin-left:auto">🔗 Link kopieren</button>
+            </div>
+            <div class="muted room-link" style="word-break:break-all"></div>
+            <div class="row" style="margin-top:8px"><button class="leave">⬅ Raum verlassen</button></div>
+          </div>
           <div class="panel">
             <h2 style="margin-top:0">Spieler <span class="count"></span></h2>
             <div class="row"><input class="name" maxlength="20" placeholder="Dein Name" style="flex:1"><button class="rename">Ändern</button></div>
@@ -101,20 +115,6 @@ export class LobbyUI {
             <h3 style="margin-top:0">Chat</h3>
             <div class="chat-log"></div>
             <input class="chat-in" placeholder="Nachricht… (Enter)" style="width:100%" maxlength="200">
-          </div>
-          <div class="panel invite-lan" style="margin-top:16px;font-size:13px">
-            <b class="gold">Mitspieler einladen:</b> Andere Rechner im selben Netzwerk öffnen
-            <div style="font-size:16px;margin:4px 0"><code>${esc(location.host)}</code></div>
-            <span class="muted">(Statt "localhost" die LAN-IP verwenden, die der Server beim Start anzeigt.)</span>
-          </div>
-          <div class="panel invite-online hidden" style="margin-top:16px;font-size:13px">
-            <b class="gold">Mitspieler einladen:</b> <span class="room-title"></span>
-            <div class="row" style="margin:6px 0">
-              <span class="room-code"></span>
-              <button class="copy-link" style="margin-left:auto">🔗 Link kopieren</button>
-            </div>
-            <div class="muted room-link" style="word-break:break-all"></div>
-            <div class="row" style="margin-top:8px"><button class="leave">⬅ Raum verlassen</button></div>
           </div>
         </div>
       </div>`;
