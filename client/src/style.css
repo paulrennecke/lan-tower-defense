@@ -243,9 +243,9 @@ button > kbd { margin-left: auto; }
 .build-btn:has(> kbd) { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 0; }
 .build-btn > kbd { margin: 0; }
 .sel-panel .actions button { position: relative; }
-.sel-panel .actions.three { grid-template-columns: 1fr 1fr; grid-template-rows: 48px 40px; gap: 6px; width: 340px; }
-.sel-panel .actions.three button { height: auto; gap: 0; padding: 0 26px; white-space: nowrap; }
-.sel-panel .actions.three .clear { grid-column: 1 / -1; }
+.sel-panel .actions.three { grid-template-columns: 1fr; grid-template-rows: repeat(3, 40px); gap: 6px; width: 150px; }
+.sel-panel .actions.three button { height: 40px; gap: 0; padding: 0 4px; white-space: nowrap; font-size: 13px; }
+.sel-panel .actions.three button > kbd { display: none; }
 .sel-panel .actions button > kbd { position: absolute; top: 4px; right: 4px; margin: 0; }
 .sel-panel .actions button:has(> kbd) { display: flex; justify-content: center; }
 .game-menu button:has(> kbd) { justify-content: space-between; }
