@@ -367,8 +367,8 @@ export class GameView {
       <h1 style="text-align:center;margin:4px 0">${msg.victory ? '🏆 Ruhmreicher Kampf!' : '💀 Niederlage'}</h1>
       <p style="text-align:center;font-size:18px;margin:4px">${msg.victory ? `Ihr habt alle ${VICTORY_WAVE} Wellen besiegt und im Endlos-Modus bis Welle <b>${msg.wave}</b> durchgehalten!` : `Das Tor ist gefallen. Überstanden: <b>${msg.wave}</b> Wellen.`}</p>
       <p style="text-align:center" class="${msg.newRecord ? 'gold' : 'muted'}">${msg.newRecord ? '🎉 Neuer Rekord' : '🏆 Rekord'} auf „${esc(mapName)}“: Welle ${msg.highscore}</p>
-      <div class="tiles">
-        ${tile('⏱', 'Spielzeit', time)}${msg.victory ? tile('🗺', 'Karte', esc(mapName)) : ''}${tile('👥', 'Spieler', String(sm.players))}${msg.victory ? tile('❤', 'Leben übrig / verloren', `${sm.livesLeft} / ${sm.livesLost}`) : ''}
+      <div class="tiles" style="grid-template-columns:repeat(${msg.victory ? 4 : 3}, 1fr)">
+        ${tile('⏱', 'Spielzeit', time)}${msg.victory ? tile('🗺', 'Karte', esc(mapName)) + tile('👥', 'Spieler', String(sm.players)) + tile('❤', 'Leben übrig / verloren', `${sm.livesLeft} / ${sm.livesLost}`) : ''}
         ${tile('☠', 'Gegner besiegt', fmt(sm.creepsKilled))}${tile('👑', 'Bosse besiegt', String(sm.bossesKilled))}${tile('💥', 'Gesamtschaden', fmt(sm.totalDamage))}${tile('🏗', 'Türme gebaut / stehen', `${sm.towersBuilt} / ${sm.towersAlive}`)}${tile('🧱', 'Mauern gebaut / stehen', `${sm.wallsBuilt ?? 0} / ${sm.wallsAlive ?? 0}`)}
       </div>
       <div class="muted" style="font-size:13px;margin:8px 0">
