@@ -5,7 +5,7 @@
 # Deployments are rolling: the new version starts next to the running one and only receives new visitors and new
 # rooms; running rooms stay on their old instance until they are empty (see tools/deploy-remote.sh).
 #
-# Required repository secrets (same as the Adventskalender):
+# Required repository secrets:
 #   SFTP_HOST         Uberspace host, e.g. xyz.uberspace.de
 #   SFTP_USERNAME     Uberspace user
 #   SFTP_PRIVATE_KEY  private SSH key (the public key is in ~/.ssh/authorized_keys on Uberspace)

@@ -239,7 +239,7 @@ Einmalige Einrichtung:
 1. **DNS:** Für `td.rennecke.org` **und** `dev.td.rennecke.org` einen `A`/`AAAA`-Eintrag (oder `CNAME`) auf den Uberspace-Host setzen.
 2. Auf dem Uberspace (per SSH): `uberspace tools version use node 22` (die Domains legt der Workflow per `uberspace web domain add` an).
 3. **GitHub → Settings → Secrets and variables → Actions → Secrets:** `SFTP_HOST`, `SFTP_USERNAME`,
-   `SFTP_PRIVATE_KEY` (wie beim Adventskalender; der öffentliche Schlüssel muss in `~/.ssh/authorized_keys` stehen).
+   `SFTP_PRIVATE_KEY` (ein SSH-Schlüssel nur für dieses Deployment; der öffentliche Schlüssel muss in `~/.ssh/authorized_keys` stehen).
    Optional als *Variables*: `TD_REMOTE_ROOT` (`lan-td`), `TD_PORT` (`61235`), `TD_DOMAIN` (`td.rennecke.org`), `TD_EXTRA_DOMAIN` (`paul-rennecke.de`,
    dort läuft das Spiel zusätzlich unter `/td/`; die Domain muss auf demselben Uberspace-Account liegen) sowie
    `TD_DEV_REMOTE_ROOT` (`lan-td-dev`), `TD_DEV_PORT` (`61245`), `TD_DEV_DOMAIN` (`dev.td.rennecke.org`). Je Umgebung werden
@@ -247,3 +247,14 @@ Einmalige Einrichtung:
 4. Workflow per Push oder manuell („Run workflow“) starten.
 
 Nützlich auf dem Server: `supervisorctl status`, `supervisorctl tail -f lan-td-s0 stderr`, `cat ~/lan-td-data/router.json`.
+
+## Lizenz und Hinweise
+
+- Der Quellcode steht unter der [MIT-Lizenz](LICENSE).
+- **Fan-Projekt:** LAN TD ist ein unabhängiges, nicht-kommerzielles Hobbyprojekt, das vom Spielprinzip der Warcraft-III-Karte
+  „Wintermaul TD“ inspiriert ist. Es enthält keine Original-Assets, -Texturen, -Modelle oder -Sounds; alle Grafiken werden im
+  Code erzeugt. Einzelne Namen (z. B. Kartenname, Klassen- und Einheitennamen sowie die Zufallsnamen der Spieler) lehnen sich an
+  das Warcraft-Universum an. „Warcraft“ und „Blizzard“ sind Marken von Blizzard Entertainment, Inc.; das Projekt steht in keiner
+  Verbindung zu Blizzard Entertainment und wird von dort nicht unterstützt.
+- Der öffentliche Server ist ein privates Angebot ohne Gewähr. Es werden keine Konten oder personenbezogenen Daten gespeichert;
+  Spielernamen und Spielstände liegen nur als Dateien auf dem Server (Spielstände je Browser-Schlüssel).
