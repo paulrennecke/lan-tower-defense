@@ -260,7 +260,8 @@ export class Entities {
         // Damage numbers in the colour of the player who caused them.
         const [, x, y, amount, owner] = f;
         const css = '#' + this.colorOf(owner).toString(16).padStart(6, '0');
-        this.fx.text(toWorld(x + (Math.random() - 0.5) * 0.8, y, 1.4), String(amount), css, 0.6);
+        const own = owner === this.youId;
+        this.fx.text(toWorld(x + (Math.random() - 0.5) * 0.8, y, own ? 1.8 : 1.3), String(amount), css, own ? 1.1 : 0.5);
         break;
       }
       case 'h': {
