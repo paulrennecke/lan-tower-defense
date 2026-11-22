@@ -3,6 +3,10 @@
 Nur spielrelevante Änderungen. Wird auch im Spiel angezeigt (Version unten links bzw. im Menü).
 Neue Einträge oben unter einer Überschrift `## <Version> – <Datum>` ergänzen und `version` in `package.json` anheben.
 
+## 1.1.2 – 2026-11-22
+
+- 🔗 In Raumübersicht und Lobby führt ein GitHub-Symbol zum Quellcode.
+
 ## 1.1.1 – 2026-11-16
 
 - 💰 **Kopfgeld nach Leistung:** Das Gold für besiegte Gegner bekommt nicht mehr jeder gleich, sondern wer etwas beigetragen hat – 60 % nach verursachtem Schaden, 15 % für Verlangsamen, Betäuben und Rüstung senken, 25 % für den Todesstoß. Wer nichts tut, geht leer aus.
