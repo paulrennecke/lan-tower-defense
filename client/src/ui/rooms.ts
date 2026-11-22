@@ -1,7 +1,7 @@
 import { MAX_PLAYERS, isRoomCode, type RoomInfo } from '../../../shared/protocol';
 import { MAP_BY_ID } from '../../../shared/maps';
 import { esc } from './format';
-import { bindVersionLink, versionLinkHtml } from './about';
+import { bindVersionLink, githubLinkHtml, versionLinkHtml } from './about';
 import { rulesHtml } from './rules';
 
 export interface RoomsActions {
@@ -65,7 +65,8 @@ export class RoomsUI {
           <summary><b>📖 Spielregeln</b> <span class="muted">– anklicken zum Aufklappen</span></summary>
           ${rulesHtml()}
         </details>
-      </div>`;
+      </div>
+      ${githubLinkHtml()}`;
     root.appendChild(this.el);
     bindVersionLink(this.el);
 

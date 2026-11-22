@@ -2,7 +2,7 @@ import { CLASSES, CLASS_BY_ID } from '../../../shared/data/classes';
 import { MAX_PLAYERS, type LobbyPlayer, type ServerMsg } from '../../../shared/protocol';
 import { CLASS_ICONS, TOWER_ICONS, esc, hex } from './format';
 import { MAPS, type MapDef } from '../../../shared/maps';
-import { bindVersionLink, versionLinkHtml } from './about';
+import { bindVersionLink, githubLinkHtml, versionLinkHtml } from './about';
 import { rulesHtml } from './rules';
 
 /** Small top-down preview of a map (like the WC3 minimap). */
@@ -117,7 +117,8 @@ export class LobbyUI {
             <input class="chat-in" placeholder="Nachricht… (Enter)" style="width:100%" maxlength="200">
           </div>
         </div>
-      </div>`;
+      </div>
+      ${githubLinkHtml()}`;
     root.appendChild(this.el);
     bindVersionLink(this.el);
     this.q('.leave').onclick = () => actions.leave?.();

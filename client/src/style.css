@@ -47,9 +47,14 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
 /* ------------------------------------------------------------ Lobby */
 #lobby, #rooms {
-  position: fixed; inset: 0; overflow: auto; padding: 18px 24px;
+  position: fixed; inset: 0; overflow: auto; padding: 18px 24px; display: flex; flex-direction: column;
   background: radial-gradient(ellipse at top, #2a2418 0%, #0c0b0a 70%), #0c0b0a;
 }
+#lobby .github-link, #rooms .github-link {
+  display: flex; justify-content: flex-end; margin: auto -4px 2px; padding-top: 20px;
+}
+#lobby .github-link a, #rooms .github-link a { display: block; color: var(--text); }
+.github-link svg { display: block; }
 #lobby h1, #rooms h1 { text-align: center; margin: 0 0 4px; font-size: 34px; }
 #lobby .subtitle, #rooms .subtitle { text-align: center; color: var(--muted); margin-bottom: 16px; }
 .rooms-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; max-width: 1100px; margin: 0 auto; }
